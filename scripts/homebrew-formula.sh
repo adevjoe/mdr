@@ -41,7 +41,7 @@ class Mdr < Formula
   on_macos do
     on_arm do
       url "https://api.github.com/repos/$repo/releases/assets/$(asset_id "$arm")",
-          header: [
+          headers: [
             "Authorization: Bearer #{ENV.fetch("HOMEBREW_GITHUB_API_TOKEN", "")}",
             "Accept: application/octet-stream",
           ]
@@ -49,7 +49,7 @@ class Mdr < Formula
     end
     on_intel do
       url "https://api.github.com/repos/$repo/releases/assets/$(asset_id "$intel")",
-          header: [
+          headers: [
             "Authorization: Bearer #{ENV.fetch("HOMEBREW_GITHUB_API_TOKEN", "")}",
             "Accept: application/octet-stream",
           ]
