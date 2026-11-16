@@ -19,7 +19,7 @@ jobs:
         target: [aarch64-apple-darwin, x86_64-apple-darwin]
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -52,7 +52,7 @@ jobs:
           tar -C "target/${{ matrix.target }}/release" -czf "$name" mdr
           shasum -a 256 "$name" > "$name.sha256"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: mdr-${{ matrix.target }}
           path: mdr-${{ matrix.target }}.tar.gz*
@@ -61,7 +61,7 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           merge-multiple: true
 
@@ -69,7 +69,7 @@ jobs:
         run: cat *.sha256 > checksums.txt
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           generate_release_notes: true
           files: |
@@ -87,10 +87,10 @@ jobs:
         if: env.HAS_TAP_TOKEN != 'true'
         run: echo "::notice::未设置 HOMEBREW_TAP_TOKEN，跳过 Homebrew tap 更新"
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         if: env.HAS_TAP_TOKEN == 'true'
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         if: env.HAS_TAP_TOKEN == 'true'
         with:
           repository: ${{ vars.HOMEBREW_TAP_REPOSITORY || 'adevjoe/homebrew-tap' }}
