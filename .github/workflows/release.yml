@@ -1,0 +1,116 @@
+name: Release
+
+# 推送 v* 标签时：测试 → 构建 macOS 二进制 → 发布 GitHub Release →（可选）更新 Homebrew tap。
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: build (${{ matrix.target }})
+    strategy:
+      matrix:
+        target: [aarch64-apple-darwin, x86_64-apple-darwin]
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Check tag matches Cargo.toml version
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "标签 $GITHUB_REF_NAME 与 Cargo.toml 中的版本 v$version 不一致" >&2
+            exit 1
+          fi
+
+      - name: Test
+        if: matrix.target == 'aarch64-apple-darwin'
+        run: cargo test --locked
+
+      - name: Build
+        run: cargo build --release --locked --target ${{ matrix.target }}
+
+      - name: Package
+        run: |
+          name="mdr-${{ matrix.target }}.tar.gz"
+          tar -C "target/${{ matrix.target }}/release" -czf "$name" mdr
+          shasum -a 256 "$name" > "$name.sha256"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mdr-${{ matrix.target }}
+          path: mdr-${{ matrix.target }}.tar.gz*
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+
+      - name: Create checksums file
+        run: cat *.sha256 > checksums.txt
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            mdr-*.tar.gz
+            checksums.txt
+
+  homebrew:
+    # 需要在仓库里设置 HOMEBREW_TAP_TOKEN（能写 adevjoe/homebrew-tap 的令牌），否则跳过。
+    needs: release
+    runs-on: ubuntu-latest
+    env:
+      HAS_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN != '' }}
+    steps:
+      - name: Skip without token
+        if: env.HAS_TAP_TOKEN != 'true'
+        run: echo "::notice::未设置 HOMEBREW_TAP_TOKEN，跳过 Homebrew tap 更新"
+
+      - uses: actions/checkout@v4
+        if: env.HAS_TAP_TOKEN == 'true'
+
+      - uses: actions/checkout@v4
+        if: env.HAS_TAP_TOKEN == 'true'
+        with:
+          repository: ${{ vars.HOMEBREW_TAP_REPOSITORY || 'adevjoe/homebrew-tap' }}
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: tap
+
+      - name: Update formula
+        if: env.HAS_TAP_TOKEN == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p tap/Formula
+          scripts/homebrew-formula.sh "$GITHUB_REF_NAME" > tap/Formula/mdr.rb
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/mdr.rb
+          if git diff --cached --quiet; then
+            echo "formula 没有变化"
+          else
+            git commit -m "mdr ${GITHUB_REF_NAME#v}"
+            git push
+          fi

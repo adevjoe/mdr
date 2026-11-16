@@ -9,10 +9,22 @@ cat notes.md | mdr
 
 ## 安装
 
+### Homebrew（macOS）
+
+```sh
+export HOMEBREW_GITHUB_API_TOKEN=$(gh auth token)   # 仓库是私有的，下载需要令牌
+brew install adevjoe/tap/mdr
+```
+
+升级用 `brew upgrade mdr`，同样需要设置 `HOMEBREW_GITHUB_API_TOKEN`。
+可以把上面的 `export` 写进 `~/.zshrc`，或者在需要时临时加在命令前面。
+
+### 从源码安装
+
 需要 Rust 工具链（1.88 或更新版本）。
 
 ```sh
-git clone <仓库地址> mdr   # 或者直接进入已有的源码目录
+git clone git@github.com:adevjoe/mdr.git
 cd mdr
 cargo install --path .
 ```
@@ -129,6 +141,24 @@ INSTA_UPDATE=always cargo test    # 或安装 cargo-insta 后运行 cargo insta 
 ```
 
 然后用 `git diff tests/snapshots` 检查变化是否符合预期。
+
+### CI 与发布
+
+- 每次推送到 `main` 和每个 PR，GitHub Actions 都会在 Linux 和 macOS 上跑格式检查、clippy、测试和发布构建（`.github/workflows/ci.yml`）。
+- 发布新版本：改 `Cargo.toml` 里的 `version`，提交后打同名标签并推送：
+
+  ```sh
+  git tag v0.2.0 && git push origin main v0.2.0
+  ```
+
+  `.github/workflows/release.yml` 会先跑测试，再构建 macOS arm64 / x86_64 二进制，然后发布 GitHub Release。
+- Homebrew formula 在 [adevjoe/homebrew-tap](https://github.com/adevjoe/homebrew-tap) 里，由 `scripts/homebrew-formula.sh` 根据 release 生成。
+  如果在本仓库的 Actions secrets 里设置了 `HOMEBREW_TAP_TOKEN`（能写 tap 仓库的令牌），发布时会自动更新 formula；
+  没设置时，手动运行：
+
+  ```sh
+  scripts/homebrew-formula.sh v0.2.0 > "$(brew --repository adevjoe/tap)/Formula/mdr.rb"
+  ```
 
 ## 尚未支持
 
