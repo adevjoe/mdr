@@ -1,0 +1,137 @@
+//! 代码块语法高亮（syntect）。
+
+use std::sync::LazyLock;
+
+use anstyle::{Ansi256Color, Color, RgbColor, Style};
+use syntect::easy::HighlightLines;
+use syntect::highlighting::{FontStyle, Theme, ThemeSet};
+use syntect::parsing::{SyntaxReference, SyntaxSet};
+use syntect::util::LinesWithEndings;
+
+static SYNTAXES: LazyLock<SyntaxSet> = LazyLock::new(SyntaxSet::load_defaults_newlines);
+static THEME: LazyLock<Theme> = LazyLock::new(|| {
+    let mut set = ThemeSet::load_defaults();
+    set.themes.remove("base16-ocean.dark").unwrap_or_default()
+});
+
+fn find_syntax(lang: &str) -> Option<&'static SyntaxReference> {
+    let ss = &*SYNTAXES;
+    let lower = lang.to_ascii_lowercase();
+    // syntect 自带的语法里没有这些名字，映射到相近的语法。
+    let alias = match lower.as_str() {
+        "ts" | "typescript" | "tsx" | "jsx" | "mjs" | "cjs" => "js",
+        "shell" | "zsh" | "console" | "shellsession" => "bash",
+        "jsonc" | "json5" => "json",
+        "toml" | "ini" | "conf" => "ini",
+        "golang" => "go",
+        "py3" => "py",
+        "c++" => "cpp",
+        other => other,
+    };
+    ss.find_syntax_by_token(alias)
+        .or_else(|| ss.find_syntax_by_name(lang))
+        .or_else(|| {
+            (alias == "ini")
+                .then(|| ss.find_syntax_by_token("yaml"))
+                .flatten()
+        })
+}
+
+/// 是否认识这门语言。
+pub fn supports(lang: &str) -> bool {
+    find_syntax(lang).is_some()
+}
+
+/// 高亮代码，返回每行的 (样式, 文本) 片段；不认识的语言返回 `None`。
+///
+/// 与主题默认前景色相同的文字不着色，这样在浅色终端里也能看清。
+pub fn highlight(code: &str, lang: &str, truecolor: bool) -> Option<Vec<Vec<(Style, String)>>> {
+    let syntax = find_syntax(lang)?;
+    let theme = &*THEME;
+    let default_fg = theme.settings.foreground;
+    let mut h = HighlightLines::new(syntax, theme);
+    let mut out = Vec::new();
+    for line in LinesWithEndings::from(code) {
+        let ranges = h.highlight_line(line, &SYNTAXES).ok()?;
+        let spans = ranges
+            .into_iter()
+            .filter_map(|(st, text)| {
+                let text = text.trim_end_matches(['\n', '\r']);
+                if text.is_empty() {
+                    return None;
+                }
+                let mut style = Style::new();
+                if Some(st.foreground) != default_fg {
+                    let c = st.foreground;
+                    style = style.fg_color(Some(rgb(c.r, c.g, c.b, truecolor)));
+                }
+                if st.font_style.contains(FontStyle::BOLD) {
+                    style = style.bold();
+                }
+                if st.font_style.contains(FontStyle::ITALIC) {
+                    style = style.italic();
+                }
+                if st.font_style.contains(FontStyle::UNDERLINE) {
+                    style = style.underline();
+                }
+                Some((style, text.to_string()))
+            })
+            .collect();
+        out.push(spans);
+    }
+    Some(out)
+}
+
+fn rgb(r: u8, g: u8, b: u8, truecolor: bool) -> Color {
+    if truecolor {
+        Color::Rgb(RgbColor(r, g, b))
+    } else {
+        Color::Ansi256(Ansi256Color(rgb_to_ansi256(r, g, b)))
+    }
+}
+
+/// 把 24 位颜色映射到 xterm 256 色。
+pub fn rgb_to_ansi256(r: u8, g: u8, b: u8) -> u8 {
+    if r == g && g == b {
+        return match r {
+            0..8 => 16,
+            249.. => 231,
+            _ => 232 + ((u16::from(r) - 8) * 24 / 247) as u8,
+        };
+    }
+    let q = |v: u8| -> u8 {
+        match v {
+            0..48 => 0,
+            48..115 => 1,
+            _ => (v - 35) / 40,
+        }
+    };
+    16 + 36 * q(r) + 6 * q(g) + q(b)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ansi256_mapping() {
+        assert_eq!(rgb_to_ansi256(0, 0, 0), 16);
+        assert_eq!(rgb_to_ansi256(255, 255, 255), 231);
+        assert_eq!(rgb_to_ansi256(255, 0, 0), 196);
+        assert_eq!(rgb_to_ansi256(0, 255, 0), 46);
+    }
+
+    #[test]
+    fn known_languages() {
+        for lang in [
+            "rust", "python", "js", "ts", "bash", "json", "go", "toml", "yaml",
+        ] {
+            assert!(supports(lang), "{lang}");
+        }
+        assert!(!supports("no-such-language"));
+        let lines = highlight("fn main() {}\nlet x = 1;\n", "rust", true).unwrap();
+        assert_eq!(lines.len(), 2);
+        let joined: String = lines[0].iter().map(|(_, t)| t.as_str()).collect();
+        assert_eq!(joined, "fn main() {}");
+    }
+}

@@ -1,0 +1,33 @@
+[package]
+name = "mdr"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+description = "在终端里渲染 Markdown 的命令行工具"
+license = "MIT"
+readme = "README.md"
+
+[[bin]]
+name = "mdr"
+path = "src/main.rs"
+
+[dependencies]
+anstyle = "1.0"
+clap = { version = "4.5", features = ["derive"] }
+pulldown-cmark = { version = "0.13", default-features = false }
+syntect = { version = "5.3", default-features = false, features = [
+    "parsing",
+    "default-syntaxes",
+    "default-themes",
+    "regex-fancy",
+] }
+terminal_size = "0.4"
+unicode-segmentation = "1.12"
+unicode-width = "0.2"
+
+[dev-dependencies]
+insta = "1.43"
+
+[profile.release]
+lto = true
+strip = true
