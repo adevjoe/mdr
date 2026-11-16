@@ -28,6 +28,10 @@
 - 邮件链接：<mailto:hello@example.com>
 - 图片：![mdr 的终端截图](https://example.com/images/mdr-screenshot.png)
 
+单独成段的本地图片在 Ghostty 和 kitty 里会直接显示出来：
+
+![一张渐变示意图](demo.png)
+
 ## 列表
 
 无序列表与嵌套：

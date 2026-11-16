@@ -66,6 +66,8 @@ mdr examples/sample.md
 | `--no-color` | 不输出颜色和样式，等同于 `--color never` |
 | `--color <auto\|always\|never>` | 何时输出颜色，默认 `auto` |
 | `--hyperlinks <auto\|always\|never>` | 何时把链接做成可点击的终端超链接，默认 `auto` |
+| `--style <auto\|rich\|basic>` | 显示风格。`auto` 在 Ghostty、kitty、WezTerm 里用增强效果，其他终端用基础效果 |
+| `--images <auto\|always\|never>` | 何时在终端里直接显示本地图片，默认 `auto`（Ghostty、kitty） |
 | `--no-pager` | 不使用分页器 |
 | `-h, --help` / `-V, --version` | 帮助 / 版本 |
 
@@ -88,6 +90,28 @@ mdr examples/sample.md
 否则在链接文字后面用 `<网址>` 显示地址。终端是否支持靠环境变量判断，判断不准时可以用 `--hyperlinks always` 或 `--hyperlinks never` 指定。
 
 图片在终端里显示为 `[图片: 替代文字]`，并附上图片地址（或做成可点击的链接）。
+在 Ghostty 和 kitty 里，单独成段的本地图片会直接显示出来，见下一节。
+
+### Ghostty 等现代终端
+
+在 Ghostty（以及 kitty、WezTerm）里，mdr 会自动切换到增强样式（`--style rich`）：
+
+- **代码块**画成铺满底色的面板，语言名靠右显示；**行内代码**也带同样的底色。
+  底色是在终端背景色上略微调亮（深色背景）或调暗（浅色背景）得到的，跟随你的配色方案；
+  代码高亮也会按背景深浅选用深色或浅色主题。终端背景色通过 OSC 11 查询得到。
+- **链接**用点线下划线，和普通下划线区分开。
+- **引用块和提示块**用更粗的 `▎` 竖条（Ghostty 自己绘制方块字符，上下行之间没有缝隙），**表格**用圆角边框。
+- **图片**：单独成段的本地图片（`![说明](图/示意.png)`）用 kitty 图形协议直接显示，下面附上替代文字。
+  支持 PNG、JPEG、GIF、WebP；相对路径以 Markdown 文件所在目录为准；宽度不超过排版宽度，高度不超过窗口的三分之二。
+  网络图片不下载，和文字混在一起的图片（比如徽章）仍按文字显示。
+- 输出使用同步输出模式（DEC 2026），大文档一次性刷新，不会闪烁。
+
+说明：
+
+- 分页器 `less` 显示不了图片。内容超过一屏、交给分页器时，图片退回文字显示；想看图片可以加 `--no-pager`。
+- 在 tmux / screen 里不启用增强样式和图片（它们会拦截这些转义序列），需要时可以用 `--style rich` 强制打开。
+- 通过 ssh 登录时，只要 `TERM` 是 `xterm-ghostty` 也会识别为 Ghostty。
+- 不喜欢增强效果可以用 `--style basic`，只关图片用 `--images never`。
 
 ### 分页器
 
@@ -130,9 +154,11 @@ cargo clippy           # 静态检查
 | `src/wrap.rs` | 按显示宽度换行（宽字符、避头尾、软换行） |
 | `src/render.rs` | 排版：标题、列表缩进、引用、代码块、表格列宽等 |
 | `src/highlight.rs` | 代码块语法高亮 |
-| `src/theme.rs` | 各元素的颜色与样式 |
-| `src/output.rs` | 生成 ANSI 样式和 OSC 8 超链接 |
-| `src/main.rs` | 命令行参数、颜色判断、终端宽度、分页器 |
+| `src/theme.rs` | 各元素的颜色与样式（基础 / 增强两套外观） |
+| `src/term.rs` | 识别 Ghostty 等终端、查询背景色和格子像素尺寸 |
+| `src/graphics.rs` | 读取、缩放图片，生成 kitty 图形协议序列 |
+| `src/output.rs` | 生成 ANSI 样式、OSC 8 超链接和图片转义 |
+| `src/main.rs` | 命令行参数、颜色与终端能力判断、终端宽度、分页器 |
 
 快照测试在 `tests/snapshots.rs`，快照文件位于 `tests/snapshots/`。修改排版后如需更新快照：
 
@@ -163,5 +189,6 @@ INSTA_UPDATE=always cargo test    # 或安装 cargo-insta 后运行 cargo insta 
 ## 尚未支持
 
 - 脚注、定义列表、数学公式的专门排版（目前按普通文本或行内代码显示）
-- 自定义配色主题；代码高亮固定使用 `base16-ocean.dark`，在浅色背景的终端里个别颜色可能偏淡
-- 终端里直接显示图片
+- 自定义配色主题；基础样式下代码高亮固定使用 `base16-ocean.dark`，在浅色背景的终端里个别颜色可能偏淡
+  （增强样式会按终端背景自动选主题）
+- 网络图片、SVG，以及在 iTerm2 等不支持 kitty 图形协议的终端里显示图片

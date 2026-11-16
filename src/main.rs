@@ -1,18 +1,28 @@
 use std::env;
 use std::fs;
 use std::io::{self, IsTerminal, Read, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode, Stdio};
 
 use clap::{Parser, ValueEnum};
 
-use mdr::{RenderOptions, output, render};
+use mdr::{ImageOptions, RenderOptions, Rich, output, render, term};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
 enum When {
     Auto,
     Always,
     Never,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+enum StyleMode {
+    /// 在 Ghostty、kitty、WezTerm 里用 rich，其他终端用 basic
+    Auto,
+    /// 代码块底色面板、行内代码底色、点线链接等增强效果
+    Rich,
+    /// 只用文字颜色和边框线，适用于所有终端
+    Basic,
 }
 
 /// 在终端里渲染 Markdown。
@@ -42,6 +52,14 @@ struct Cli {
     /// 何时把链接做成可点击的终端超链接（OSC 8）
     #[arg(long, value_enum, default_value_t = When::Auto, value_name = "WHEN")]
     hyperlinks: When,
+
+    /// 显示风格。auto：在 Ghostty、kitty、WezTerm 里自动使用增强效果
+    #[arg(long, value_enum, default_value_t = StyleMode::Auto, value_name = "STYLE")]
+    style: StyleMode,
+
+    /// 何时在终端里直接显示本地图片（kitty 图形协议，Ghostty 和 kitty 支持）
+    #[arg(long, value_enum, default_value_t = When::Auto, value_name = "WHEN")]
+    images: When,
 
     /// 内容超过一屏时也不使用分页器
     #[arg(long)]
@@ -82,24 +100,62 @@ fn run(cli: &Cli) -> Result<(), String> {
         .map(usize::from)
         .unwrap_or_else(|| terminal_width(stdout_tty));
 
-    let opts = RenderOptions {
+    let kind = term::detect_env();
+    let rich = color
+        && match cli.style {
+            StyleMode::Rich => true,
+            StyleMode::Basic => false,
+            StyleMode::Auto => kind.rich(),
+        };
+    let window = term::window_size();
+    let images = match cli.images {
+        When::Always => color,
+        When::Never => false,
+        When::Auto => color && stdout_tty && kind.graphics(),
+    };
+
+    let mut opts = RenderOptions {
         width,
         color,
         hyperlinks,
-        truecolor: color && truecolor_supported(),
+        // 这几种现代终端都支持真彩色，但通过 ssh 登录时 COLORTERM 不会传过去。
+        truecolor: color && (truecolor_supported() || kind.rich()),
+        rich: rich.then(|| Rich {
+            styled_underline: true,
+            // 输出被管道接走时不查询：下游的分页器可能会抢走终端的回复。
+            background: if stdout_tty { term::background() } else { None },
+        }),
+        images: images.then(|| image_options(cli, window)),
     };
-    let lines = render(&source, &opts);
-    let text = output::to_ansi(&lines, color);
+    let mut lines = render(&source, &opts);
 
-    if stdout_tty
-        && !cli.no_pager
-        && let Some((_, terminal_size::Height(rows))) = terminal_size::terminal_size()
-        && lines.len() >= usize::from(rows)
-        && page(&text)
+    let screen_rows = window
+        .map(|w| usize::from(w.rows))
+        .or_else(|| terminal_size::terminal_size().map(|(_, h)| usize::from(h.0)))
+        .filter(|_| stdout_tty && !cli.no_pager);
+    if let Some(rows) = screen_rows
+        && lines.len() >= rows
     {
-        return Ok(());
+        // 分页器显示不了图片。去掉图片后仍然超过一屏才分页；否则是图片把内容撑长了，
+        // 直接带图输出。
+        let paged = if opts.images.is_some() {
+            opts.images = None;
+            Some(render(&source, &opts)).filter(|l| l.len() >= rows)
+        } else {
+            Some(std::mem::take(&mut lines))
+        };
+        if let Some(paged) = paged {
+            if page(&output::to_ansi(&paged, color)) {
+                return Ok(());
+            }
+            lines = paged;
+        }
     }
 
+    let mut text = output::to_ansi(&lines, color);
+    if stdout_tty && rich {
+        text = format!("{}{text}{}", output::SYNC_BEGIN, output::SYNC_END);
+    }
     let mut out = io::stdout().lock();
     match out.write_all(text.as_bytes()).and_then(|()| out.flush()) {
         Ok(()) => Ok(()),
@@ -129,6 +185,31 @@ fn read_input(cli: &Cli) -> Result<String, String> {
         }
     };
     Ok(String::from_utf8_lossy(&bytes).into_owned())
+}
+
+/// 图片显示参数：相对路径以 Markdown 文件所在目录为准；一张图最多占窗口高度的三分之二。
+fn image_options(cli: &Cli, window: Option<term::WindowSize>) -> ImageOptions {
+    let base_dir = match &cli.file {
+        Some(p) if p.as_os_str() != "-" => p.parent().unwrap_or(Path::new(".")).to_path_buf(),
+        _ => PathBuf::from("."),
+    };
+    let w = window.unwrap_or_default();
+    // 终端不报告像素尺寸时，按常见的 1:2 格子估算。
+    let cell = if w.cell_width > 0 && w.cell_height > 0 {
+        (w.cell_width, w.cell_height)
+    } else {
+        (10, 20)
+    };
+    let max_rows = if w.rows > 0 {
+        (usize::from(w.rows) * 2 / 3).max(4)
+    } else {
+        24
+    };
+    ImageOptions {
+        base_dir,
+        cell,
+        max_rows,
+    }
 }
 
 fn env_set(name: &str) -> bool {

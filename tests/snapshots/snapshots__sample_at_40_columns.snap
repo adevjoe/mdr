@@ -47,6 +47,11 @@ Markdown 和 CommonMark）也能按终端宽度正
   <https://example.com/images/mdr-screen
   shot.png>
 
+单独成段的本地图片在 Ghostty 和 kitty 里
+会直接显示出来：
+
+[图片: 一张渐变示意图] <demo.png>
+
 列表
 ────
 

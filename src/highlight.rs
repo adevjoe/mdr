@@ -9,10 +9,31 @@ use syntect::parsing::{SyntaxReference, SyntaxSet};
 use syntect::util::LinesWithEndings;
 
 static SYNTAXES: LazyLock<SyntaxSet> = LazyLock::new(SyntaxSet::load_defaults_newlines);
-static THEME: LazyLock<Theme> = LazyLock::new(|| {
+static THEMES: LazyLock<(Theme, Theme)> = LazyLock::new(|| {
     let mut set = ThemeSet::load_defaults();
-    set.themes.remove("base16-ocean.dark").unwrap_or_default()
+    let dark = set.themes.remove("base16-ocean.dark").unwrap_or_default();
+    let light = set.themes.remove("InspiredGitHub").unwrap_or_default();
+    (dark, light)
 });
+
+/// 深色高亮主题自带的颜色。
+pub struct ThemeColors {
+    pub bg: (u8, u8, u8),
+    pub fg: (u8, u8, u8),
+    pub comment: (u8, u8, u8),
+}
+
+/// 深色高亮主题（base16-ocean.dark）的背景、前景和注释颜色。
+pub fn dark_colors() -> ThemeColors {
+    let s = &THEMES.0.settings;
+    let c =
+        |c: Option<syntect::highlighting::Color>, d: (u8, u8, u8)| c.map_or(d, |c| (c.r, c.g, c.b));
+    ThemeColors {
+        bg: c(s.background, (0x2b, 0x30, 0x3b)),
+        fg: c(s.foreground, (0xc0, 0xc5, 0xce)),
+        comment: (0x65, 0x73, 0x7e),
+    }
+}
 
 fn find_syntax(lang: &str) -> Option<&'static SyntaxReference> {
     let ss = &*SYNTAXES;
@@ -45,9 +66,15 @@ pub fn supports(lang: &str) -> bool {
 /// 高亮代码，返回每行的 (样式, 文本) 片段；不认识的语言返回 `None`。
 ///
 /// 与主题默认前景色相同的文字不着色，这样在浅色终端里也能看清。
-pub fn highlight(code: &str, lang: &str, truecolor: bool) -> Option<Vec<Vec<(Style, String)>>> {
+/// `light` 为 true 时使用浅色主题（InspiredGitHub）。
+pub fn highlight(
+    code: &str,
+    lang: &str,
+    truecolor: bool,
+    light: bool,
+) -> Option<Vec<Vec<(Style, String)>>> {
     let syntax = find_syntax(lang)?;
-    let theme = &*THEME;
+    let theme = if light { &THEMES.1 } else { &THEMES.0 };
     let default_fg = theme.settings.foreground;
     let mut h = HighlightLines::new(syntax, theme);
     let mut out = Vec::new();
@@ -82,7 +109,8 @@ pub fn highlight(code: &str, lang: &str, truecolor: bool) -> Option<Vec<Vec<(Sty
     Some(out)
 }
 
-fn rgb(r: u8, g: u8, b: u8, truecolor: bool) -> Color {
+/// 24 位颜色；终端不支持真彩色时换成最接近的 256 色。
+pub fn rgb(r: u8, g: u8, b: u8, truecolor: bool) -> Color {
     if truecolor {
         Color::Rgb(RgbColor(r, g, b))
     } else {
@@ -129,7 +157,8 @@ mod tests {
             assert!(supports(lang), "{lang}");
         }
         assert!(!supports("no-such-language"));
-        let lines = highlight("fn main() {}\nlet x = 1;\n", "rust", true).unwrap();
+        let lines = highlight("fn main() {}\nlet x = 1;\n", "rust", true, false).unwrap();
+        assert!(highlight("fn main() {}\n", "rust", true, true).is_some());
         assert_eq!(lines.len(), 2);
         let joined: String = lines[0].iter().map(|(_, t)| t.as_str()).collect();
         assert_eq!(joined, "fn main() {}");

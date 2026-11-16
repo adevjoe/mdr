@@ -3,11 +3,14 @@
 //! 这里不输出任何转义序列，只决定每行有哪些文字、各自什么样式；
 //! 转成终端字节流的工作在 [`crate::output`]。
 
+use std::sync::Arc;
+
 use anstyle::Style;
 
+use crate::graphics::{self, Graphic, ImageOptions};
 use crate::highlight;
 use crate::parse::{self, Align, Block, InlineKind, Inlines, ListItem};
-use crate::theme;
+use crate::theme::{self, Look, Panel, Rich};
 use crate::wrap::{self, Item, Piece, display_width};
 
 /// 最小排版宽度。
@@ -19,11 +22,15 @@ const CONTINUATION_MARK: &str = "↪";
 const CONTINUATION_WIDTH: usize = 2;
 
 /// 一段带样式的文字。`link` 只在启用终端超链接时才会设置。
+///
+/// `graphic` 是要在这里显示的图片（只在启用图片显示时出现）。图片从这一行开始向下占
+/// `rows` 行，后面紧跟的 `rows - 1` 行是留给它的空行。
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Span {
     pub text: String,
     pub style: Style,
     pub link: Option<String>,
+    pub graphic: Option<Arc<Graphic>>,
 }
 
 /// 排版后的一行。
@@ -43,15 +50,13 @@ impl Line {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.spans.iter().all(|s| s.text.is_empty())
+        self.spans
+            .iter()
+            .all(|s| s.text.is_empty() && s.graphic.is_none())
     }
 
     fn push(&mut self, text: impl Into<String>, style: Style) {
-        self.spans.push(Span {
-            text: text.into(),
-            style,
-            link: None,
-        });
+        self.spans.push(span(text, style));
     }
 
     fn styled(text: impl Into<String>, style: Style) -> Line {
@@ -81,6 +86,10 @@ pub struct RenderOptions {
     pub hyperlinks: bool,
     /// 终端是否支持 24 位真彩色（影响代码高亮的配色）。
     pub truecolor: bool,
+    /// 现代终端的增强样式；`None` 使用基础样式。只在 `color` 为 true 时生效。
+    pub rich: Option<Rich>,
+    /// 在终端里直接显示本地图片；`None` 时图片显示为文字。
+    pub images: Option<ImageOptions>,
 }
 
 impl RenderOptions {
@@ -91,6 +100,15 @@ impl RenderOptions {
             color: false,
             hyperlinks: false,
             truecolor: false,
+            rich: None,
+            images: None,
+        }
+    }
+
+    fn look(&self) -> Look {
+        match &self.rich {
+            Some(rich) if self.color => Look::rich(rich, self.truecolor),
+            _ => Look::basic(),
         }
     }
 }
@@ -110,6 +128,7 @@ fn to_line(pieces: Vec<Piece<SpanStyle>>) -> Line {
                 text: p.text,
                 style: p.style.style,
                 link: p.style.link,
+                graphic: None,
             })
             .collect(),
     }
@@ -122,12 +141,16 @@ pub fn render(markdown: &str, opts: &RenderOptions) -> Vec<Line> {
 
 /// 排版已经解析好的块。
 pub fn render_blocks(blocks: &[Block], opts: &RenderOptions) -> Vec<Line> {
-    let r = Renderer { opts };
+    let r = Renderer {
+        opts,
+        look: opts.look(),
+    };
     r.blocks(blocks, opts.width.max(MIN_WIDTH), 0, false)
 }
 
 struct Renderer<'a> {
     opts: &'a RenderOptions,
+    look: Look,
 }
 
 /// 给每行加前缀：第一行用 `first`，其余行用 `rest`。空行只保留前缀里的非空白部分，
@@ -161,7 +184,7 @@ fn span(text: impl Into<String>, style: Style) -> Span {
     Span {
         text: text.into(),
         style,
-        link: None,
+        ..Span::default()
     }
 }
 
@@ -241,7 +264,7 @@ impl Renderer<'_> {
                     inner.push(Line::styled(theme::alert_label(*k), bar.bold()));
                 }
                 inner.extend(self.blocks(blocks, width.saturating_sub(2), depth, false));
-                let prefix = [span("│ ", bar)];
+                let prefix = [span(format!("{} ", self.look.quote_bar), bar)];
                 prefix_lines(inner, &prefix, &prefix)
             }
             Block::Table { aligns, head, rows } => self.table(aligns, head, rows, width),
@@ -267,7 +290,7 @@ impl Renderer<'_> {
 
     fn span_style(&self, base: Style, s: &parse::InlineStyle) -> SpanStyle {
         SpanStyle {
-            style: theme::inline(base, s),
+            style: theme::inline(base, s, &self.look),
             link: if self.opts.hyperlinks {
                 s.link.clone()
             } else {
@@ -339,10 +362,62 @@ impl Renderer<'_> {
     }
 
     fn paragraph(&self, content: &Inlines, base: Style, width: usize) -> Vec<Line> {
+        if let Some(lines) = self.image_paragraph(content, width) {
+            return lines;
+        }
         wrap::wrap(&self.inline_items(content, base), width)
             .into_iter()
             .map(to_line)
             .collect()
+    }
+
+    /// 只包含图片的段落：在终端里直接显示图片，下面附上替代文字。
+    /// 没有启用图片显示、段落里还有别的文字、或有图片读不了时返回 `None`，按文字显示。
+    fn image_paragraph(&self, content: &Inlines, width: usize) -> Option<Vec<Line>> {
+        let opts = self.opts.images.as_ref()?;
+        let mut images = Vec::new();
+        for inline in content {
+            match &inline.kind {
+                InlineKind::Text(alt) if inline.style.image => {
+                    images.push((inline.style.link.as_deref().unwrap_or_default(), alt));
+                }
+                InlineKind::Text(t) if t.trim().is_empty() => {}
+                InlineKind::SoftBreak | InlineKind::HardBreak => {}
+                InlineKind::Text(_) => return None,
+            }
+        }
+        if images.is_empty() {
+            return None;
+        }
+        let loaded = images
+            .into_iter()
+            .map(|(src, alt)| graphics::load(src, opts, width).map(|g| (g, alt)))
+            .collect::<Option<Vec<_>>>()?;
+
+        let caption = SpanStyle {
+            style: theme::muted().italic(),
+            link: None,
+        };
+        let mut out = Vec::new();
+        for (i, (g, alt)) in loaded.into_iter().enumerate() {
+            if i > 0 {
+                out.push(Line::default());
+            }
+            let rows = g.rows;
+            out.push(Line {
+                spans: vec![Span {
+                    graphic: Some(Arc::new(g)),
+                    ..Span::default()
+                }],
+            });
+            out.extend(std::iter::repeat_n(Line::default(), rows.saturating_sub(1)));
+            let alt = alt.trim();
+            if !alt.is_empty() {
+                let items = [Item::Text(alt.to_string(), caption.clone())];
+                out.extend(wrap::wrap(&items, width).into_iter().map(to_line));
+            }
+        }
+        Some(out)
     }
 
     fn heading(&self, level: u8, content: &Inlines, width: usize) -> Vec<Line> {
@@ -373,16 +448,6 @@ impl Renderer<'_> {
     }
 
     fn code_block(&self, lang: Option<&str>, code: &str, width: usize) -> Vec<Line> {
-        let border = theme::muted();
-        let mut out = Vec::new();
-
-        let mut head = Line::styled("╭─", border);
-        if let Some(lang) = lang {
-            head.push(" ", border);
-            head.push(lang, theme::code_lang());
-        }
-        out.push(head);
-
         let code = code.strip_suffix('\n').unwrap_or(code);
         let lines: Vec<String> = code
             .split('\n')
@@ -392,15 +457,13 @@ impl Renderer<'_> {
             Some(lang) if self.opts.color => {
                 let mut joined = lines.join("\n");
                 joined.push('\n');
-                highlight::highlight(&joined, lang, self.opts.truecolor)
+                highlight::highlight(&joined, lang, self.opts.truecolor, self.look.light)
                     .filter(|h| h.len() == lines.len())
             }
             _ => None,
         };
-
-        let inner = width.saturating_sub(2);
-        for (i, line) in lines.iter().enumerate() {
-            let pieces: Vec<Piece<SpanStyle>> = match &highlighted {
+        let pieces = |i: usize, line: &String| -> Vec<Piece<SpanStyle>> {
+            match &highlighted {
                 Some(h) => h[i]
                     .iter()
                     .map(|(style, text)| Piece {
@@ -415,16 +478,26 @@ impl Renderer<'_> {
                     text: line.clone(),
                     style: SpanStyle::default(),
                 }],
-            };
-            // 折行后的续行：对齐原行的缩进，再加一个 ↪ 标记。缩进最多占一半宽度，
-            // 保证续行还有地方放内容。
-            let indent = line.len() - line.trim_start_matches(' ').len();
-            let indent = indent.min(inner / 2);
-            let rest_width = inner.saturating_sub(indent + CONTINUATION_WIDTH);
-            let wrapped: Vec<Line> = wrap::hard_wrap_hanging(&pieces, inner, rest_width)
-                .into_iter()
-                .map(to_line)
-                .collect();
+            }
+        };
+
+        if let Some(panel) = &self.look.panel {
+            return self.code_panel(panel, lang, &lines, pieces, width);
+        }
+
+        let border = theme::muted();
+        let mut out = Vec::new();
+        let mut head = Line::styled("╭─", border);
+        if let Some(lang) = lang {
+            head.push(" ", border);
+            head.push(lang, theme::code_lang());
+        }
+        out.push(head);
+
+        let inner = width.saturating_sub(2);
+        for (i, line) in lines.iter().enumerate() {
+            let pieces = pieces(i, line);
+            let (indent, wrapped) = wrap_code_line(line, &pieces, inner);
             let first = [span("│ ", border)];
             let rest = [
                 span("│ ", border),
@@ -435,6 +508,76 @@ impl Renderer<'_> {
             out.extend(prefix_lines(wrapped, &first, &rest));
         }
         out.push(Line::styled("╰─", border));
+        out
+    }
+
+    /// 增强样式的代码块：铺满底色的面板，语言名靠右放在顶部。
+    ///
+    /// ```text
+    ///                    rust
+    ///  fn main() {
+    ///  }
+    ///
+    /// ```
+    fn code_panel(
+        &self,
+        panel: &Panel,
+        lang: Option<&str>,
+        lines: &[String],
+        pieces: impl Fn(usize, &String) -> Vec<Piece<SpanStyle>>,
+        width: usize,
+    ) -> Vec<Line> {
+        let base = Style::new().bg_color(Some(panel.bg)).fg_color(panel.fg);
+        let on_panel = |st: Style| {
+            let st = st.bg_color(Some(panel.bg));
+            if st.get_fg_color().is_none() {
+                st.fg_color(panel.fg)
+            } else {
+                st
+            }
+        };
+        // 把一行补满到面板宽度，左右各留一格空白。
+        let fill = |spans: Vec<Span>| -> Line {
+            let mut line = Line::styled(" ", base);
+            line.spans.extend(spans);
+            let pad = width.saturating_sub(line.width());
+            if pad > 0 {
+                line.push(" ".repeat(pad), base);
+            }
+            line
+        };
+
+        let mut out = Vec::new();
+        let label = lang
+            .filter(|l| display_width(l) + 2 <= width)
+            .map(|l| {
+                vec![
+                    span(" ".repeat(width - display_width(l) - 2), base),
+                    span(l, on_panel(panel.label)),
+                ]
+            })
+            .unwrap_or_default();
+        out.push(fill(label));
+
+        let inner = width.saturating_sub(2);
+        for (i, line) in lines.iter().enumerate() {
+            let mut pieces = pieces(i, line);
+            for p in &mut pieces {
+                p.style.style = on_panel(p.style.style);
+            }
+            let (indent, wrapped) = wrap_code_line(line, &pieces, inner);
+            for (j, l) in wrapped.into_iter().enumerate() {
+                let mut spans = Vec::new();
+                if j > 0 {
+                    spans.push(span(" ".repeat(indent), base));
+                    spans.push(span(CONTINUATION_MARK, on_panel(panel.label)));
+                    spans.push(span(" ", base));
+                }
+                spans.extend(l.spans);
+                out.push(fill(spans));
+            }
+        }
+        out.push(fill(Vec::new()));
         out
     }
 
@@ -536,6 +679,11 @@ impl Renderer<'_> {
         let widths = fit_columns(&natural, &min, width.saturating_sub(overhead));
 
         let border = theme::muted();
+        let (top_l, top_r, bottom_l, bottom_r) = if self.look.rounded {
+            ("╭", "╮", "╰", "╯")
+        } else {
+            ("┌", "┐", "└", "┘")
+        };
         let rule = |l: &str, m: &str, r: &str| -> Line {
             let parts: Vec<String> = widths.iter().map(|w| "─".repeat(w + 2)).collect();
             Line::styled(format!("{l}{}{r}", parts.join(m)), border)
@@ -572,7 +720,7 @@ impl Renderer<'_> {
                 .collect()
         };
 
-        let mut out = vec![rule("┌", "┬", "┐")];
+        let mut out = vec![rule(top_l, "┬", top_r)];
         out.extend(render_row(head, header_style));
         out.push(rule("├", "┼", "┤"));
         let body: Vec<Vec<Line>> = rows
@@ -588,9 +736,22 @@ impl Renderer<'_> {
             }
             out.extend(row);
         }
-        out.push(rule("└", "┴", "┘"));
+        out.push(rule(bottom_l, "┴", bottom_r));
         out
     }
+}
+
+/// 代码行按宽度硬折行。续行对齐原行的缩进，再留出 ↪ 标记的位置；缩进最多占一半宽度，
+/// 保证续行还有地方放内容。返回 (续行缩进, 折好的行)。
+fn wrap_code_line(line: &str, pieces: &[Piece<SpanStyle>], inner: usize) -> (usize, Vec<Line>) {
+    let indent = line.len() - line.trim_start_matches(' ').len();
+    let indent = indent.min(inner / 2);
+    let rest_width = inner.saturating_sub(indent + CONTINUATION_WIDTH);
+    let wrapped = wrap::hard_wrap_hanging(pieces, inner, rest_width)
+        .into_iter()
+        .map(to_line)
+        .collect();
+    (indent, wrapped)
 }
 
 #[cfg(test)]
@@ -906,5 +1067,140 @@ mod tests {
     #[test]
     fn rule_spans_full_width() {
         assert_eq!(plain("---", 12), vec!["─".repeat(12)]);
+    }
+
+    fn rich_opts(width: usize, background: Option<(u8, u8, u8)>) -> RenderOptions {
+        RenderOptions {
+            color: true,
+            truecolor: true,
+            rich: Some(Rich {
+                styled_underline: true,
+                background,
+            }),
+            ..RenderOptions::plain(width)
+        }
+    }
+
+    #[test]
+    fn rich_code_block_is_a_filled_panel() {
+        let opts = rich_opts(20, Some((0x28, 0x2c, 0x34)));
+        let lines = render(
+            "```rust\nfn main() {\n    let s = \"很长很长的字符串\";\n}\n```\n",
+            &opts,
+        );
+        let text: Vec<String> = lines.iter().map(Line::plain).collect();
+        assert_eq!(
+            text,
+            vec![
+                "               rust ",
+                " fn main() {        ",
+                "     let s = \"很长  ",
+                "     ↪ 很长的字符串 ",
+                "     ↪ \";           ",
+                " }                  ",
+                "                    ",
+            ]
+        );
+        let Look {
+            panel: Some(panel), ..
+        } = opts.look()
+        else {
+            panic!("rich look has a panel");
+        };
+        // 每一格都铺上底色。
+        for l in &lines {
+            assert_eq!(l.width(), 20);
+            for s in &l.spans {
+                assert_eq!(s.style.get_bg_color(), Some(panel.bg), "{s:?}");
+            }
+        }
+        // 深色背景上的底色比背景稍亮。
+        assert_eq!(panel.bg, anstyle::Color::Rgb(anstyle::RgbColor(57, 61, 68)));
+    }
+
+    #[test]
+    fn rich_look_follows_terminal_background() {
+        let light = rich_opts(40, Some((255, 255, 255))).look();
+        assert!(light.light);
+        assert!(light.code_chip.is_some());
+        // 不知道背景色时用高亮主题自己的深色面板，并指定文字颜色。
+        let unknown = rich_opts(40, None).look();
+        assert!(!unknown.light);
+        assert!(unknown.code_chip.is_none());
+        assert!(unknown.panel.unwrap().fg.is_some());
+        // 没有颜色时增强样式不生效。
+        let no_color = RenderOptions {
+            color: false,
+            ..rich_opts(40, None)
+        };
+        assert_eq!(no_color.look(), Look::basic());
+    }
+
+    #[test]
+    fn rich_quotes_tables_and_links() {
+        let opts = rich_opts(40, Some((0, 0, 0)));
+        let text: Vec<String> = render("> 引用\n\n| a |\n|---|\n| b |\n", &opts)
+            .iter()
+            .map(Line::plain)
+            .collect();
+        assert_eq!(
+            text,
+            vec!["▎ 引用", "", "╭───╮", "│ a │", "├───┤", "│ b │", "╰───╯"]
+        );
+
+        let lines = render("[链接](https://a.b) `代码`", &opts);
+        let link = &lines[0].spans[0];
+        assert!(
+            link.style
+                .get_effects()
+                .contains(anstyle::Effects::DOTTED_UNDERLINE)
+        );
+        let code = lines[0].spans.iter().find(|s| s.text == "代码").unwrap();
+        assert!(code.style.get_bg_color().is_some());
+    }
+
+    #[test]
+    fn image_paragraphs_become_graphics() {
+        let dir = std::env::temp_dir().join(format!("mdr-render-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        image::RgbImage::from_pixel(100, 60, image::Rgb([0, 120, 200]))
+            .save(dir.join("pic.png"))
+            .unwrap();
+        let opts = RenderOptions {
+            images: Some(ImageOptions {
+                base_dir: dir.clone(),
+                cell: (10, 20),
+                max_rows: 20,
+            }),
+            ..rich_opts(40, None)
+        };
+
+        // 100×60 像素 → 10 列 × 3 行，下面是替代文字。
+        let lines = render("> ![示意图](pic.png)\n", &opts);
+        assert_eq!(lines.len(), 4);
+        let g = lines[0]
+            .spans
+            .iter()
+            .find_map(|s| s.graphic.clone())
+            .unwrap();
+        assert_eq!((g.cols, g.rows), (10, 3));
+        let text: Vec<String> = lines.iter().map(Line::plain).collect();
+        assert_eq!(text, vec!["▎ ", "▎", "▎", "▎ 示意图"]);
+
+        // 和文字混在一起、网络图片、读不到的文件：仍按文字显示。
+        for md in [
+            "看图 ![示意图](pic.png)",
+            "![远程](https://a.b/x.png)",
+            "![丢失](missing.png)",
+        ] {
+            let lines = render(md, &opts);
+            assert!(
+                lines
+                    .iter()
+                    .all(|l| l.spans.iter().all(|s| s.graphic.is_none()))
+            );
+            assert!(lines[0].plain().contains("[图片: "), "{md}");
+        }
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }
