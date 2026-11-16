@@ -13,15 +13,24 @@ pub fn heading(level: u8) -> Style {
         1 => fg(AnsiColor::BrightMagenta).bold(),
         2 => fg(AnsiColor::BrightCyan).bold(),
         3 => fg(AnsiColor::BrightYellow).bold(),
-        4 => fg(AnsiColor::BrightGreen).bold(),
-        5 => fg(AnsiColor::BrightBlue).bold(),
+        // 避开绿色：那是行内代码的颜色。
+        4 => fg(AnsiColor::BrightBlue).bold(),
+        5 => fg(AnsiColor::Cyan).bold(),
         _ => fg(AnsiColor::Magenta).bold(),
     }
 }
 
+/// 行内代码：标准绿色（非亮色、不加粗），在深浅色终端里都不刺眼。
+pub const fn code_inline() -> Style {
+    fg(AnsiColor::Green)
+}
+
 /// 在块级基础样式上叠加行内样式。
+///
+/// 行内代码不继承块级样式（标题的颜色和加粗、表头的加粗），只保留自身的粗体/斜体/删除线，
+/// 这样在标题里也能和周围的文字区分开。
 pub fn inline(base: Style, s: &InlineStyle) -> Style {
-    let mut st = base;
+    let mut st = if s.code { code_inline() } else { base };
     if s.bold {
         st = st.bold();
     }
@@ -30,9 +39,6 @@ pub fn inline(base: Style, s: &InlineStyle) -> Style {
     }
     if s.strike {
         st = st.strikethrough();
-    }
-    if s.code {
-        st = st.fg_color(Some(Color::Ansi(AnsiColor::Yellow)));
     }
     if s.image {
         st = st.fg_color(Some(Color::Ansi(AnsiColor::Magenta)));

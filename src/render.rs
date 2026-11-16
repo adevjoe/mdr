@@ -13,6 +13,11 @@ use crate::wrap::{self, Item, Piece, display_width};
 /// 最小排版宽度。
 pub const MIN_WIDTH: usize = 10;
 
+/// 代码块折行时续行前的标记。
+const CONTINUATION_MARK: &str = "↪";
+/// 标记加后面一个空格占的列数。
+const CONTINUATION_WIDTH: usize = 2;
+
 /// 一段带样式的文字。`link` 只在启用终端超链接时才会设置。
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Span {
@@ -411,12 +416,23 @@ impl Renderer<'_> {
                     style: SpanStyle::default(),
                 }],
             };
-            let wrapped: Vec<Line> = wrap::hard_wrap(&pieces, inner)
+            // 折行后的续行：对齐原行的缩进，再加一个 ↪ 标记。缩进最多占一半宽度，
+            // 保证续行还有地方放内容。
+            let indent = line.len() - line.trim_start_matches(' ').len();
+            let indent = indent.min(inner / 2);
+            let rest_width = inner.saturating_sub(indent + CONTINUATION_WIDTH);
+            let wrapped: Vec<Line> = wrap::hard_wrap_hanging(&pieces, inner, rest_width)
                 .into_iter()
                 .map(to_line)
                 .collect();
-            let prefix = [span("│ ", border)];
-            out.extend(prefix_lines(wrapped, &prefix, &prefix));
+            let first = [span("│ ", border)];
+            let rest = [
+                span("│ ", border),
+                span(" ".repeat(indent), Style::new()),
+                span(CONTINUATION_MARK, border),
+                span(" ", Style::new()),
+            ];
+            out.extend(prefix_lines(wrapped, &first, &rest));
         }
         out.push(Line::styled("╰─", border));
         out
@@ -559,8 +575,18 @@ impl Renderer<'_> {
         let mut out = vec![rule("┌", "┬", "┐")];
         out.extend(render_row(head, header_style));
         out.push(rule("├", "┼", "┤"));
-        for row in rows {
-            out.extend(render_row(row, Style::new()));
+        let body: Vec<Vec<Line>> = rows
+            .iter()
+            .map(|row| render_row(row, Style::new()))
+            .collect();
+        // 只要有一行换了行，就在每两行之间画分隔线，否则看不出一行从哪里结束。
+        // 每行都只占一行的表格保持紧凑。
+        let separate = body.iter().any(|r| r.len() > 1);
+        for (i, row) in body.into_iter().enumerate() {
+            if i > 0 && separate {
+                out.push(rule("├", "┼", "┤"));
+            }
+            out.extend(row);
         }
         out.push(rule("└", "┴", "┘"));
         out
@@ -645,6 +671,37 @@ mod tests {
         );
         assert!(lines[4].starts_with("│ Banana          │    黄色     │"));
         assert!(lines[5].ends_with("│  100 │"));
+    }
+
+    #[test]
+    fn wrapped_table_rows_get_separators() {
+        let md = "\
+| 项目 | 描述 |
+|------|------|
+| 生成 | 这一格的内容较长需要换行 |
+| 判定 | 短 |
+| 统计 | 也短 |
+";
+        let lines = plain(md, 24);
+        assert_table_aligned(&lines);
+        assert_eq!(
+            lines,
+            vec![
+                "┌──────┬───────────────┐",
+                "│ 项目 │ 描述          │",
+                "├──────┼───────────────┤",
+                "│ 生成 │ 这一格的内容  │",
+                "│      │ 较长需要换行  │",
+                "├──────┼───────────────┤",
+                "│ 判定 │ 短            │",
+                "├──────┼───────────────┤",
+                "│ 统计 │ 也短          │",
+                "└──────┴───────────────┘",
+            ]
+        );
+        // 全是单行的表格不加分隔线。
+        let lines = plain(md, 80);
+        assert_eq!(lines.iter().filter(|l| l.starts_with('├')).count(), 1);
     }
 
     #[test]
@@ -784,11 +841,57 @@ mod tests {
                 "╭─ rust",
                 "│ fn main() {",
                 "│     println!(\"",
-                "│ 你好\");",
+                "│     ↪ 你好\");",
                 "│ }",
                 "╰─",
             ]
         );
+    }
+
+    #[test]
+    fn code_continuation_lines_are_indented_and_marked() {
+        let lines = plain(
+            "```\n  abcdefghijklmnopqrstuvwxyz\nno-indent-but-quite-long\n```\n",
+            16,
+        );
+        assert_eq!(
+            lines,
+            vec![
+                "╭─",
+                "│   abcdefghijkl",
+                "│   ↪ mnopqrstuv",
+                "│   ↪ wxyz",
+                "│ no-indent-but-",
+                "│ ↪ quite-long",
+                "╰─",
+            ]
+        );
+        for l in &lines {
+            assert!(display_width(l) <= 16, "{l:?}");
+        }
+    }
+
+    #[test]
+    fn inline_code_stands_out_in_headings() {
+        let opts = RenderOptions {
+            color: true,
+            ..RenderOptions::plain(80)
+        };
+        let lines = render("### 标的：`config.toml`", &opts);
+        let find = |t: &str| {
+            lines[0]
+                .spans
+                .iter()
+                .find(|s| s.text.contains(t))
+                .unwrap()
+                .style
+        };
+        let text = find("标的");
+        let code = find("config.toml");
+        assert_eq!(text, theme::heading(3));
+        assert_eq!(code, theme::code_inline());
+        assert_ne!(text.get_fg_color(), code.get_fg_color());
+        assert!(!code.get_effects().contains(anstyle::Effects::BOLD));
     }
 
     #[test]

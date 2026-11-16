@@ -298,13 +298,23 @@ pub fn min_width<S: Clone + PartialEq>(items: &[Item<S>]) -> usize {
 
 /// 不考虑单词边界，严格按宽度切分（用于代码块）。至少返回一行。
 pub fn hard_wrap<S: Clone + PartialEq>(pieces: &[Piece<S>], width: usize) -> Vec<WrappedLine<S>> {
-    let width = width.max(2);
+    hard_wrap_hanging(pieces, width, width)
+}
+
+/// 同 [`hard_wrap`]，但第一行宽 `first`、后续行宽 `rest`（给续行的缩进和标记留出位置）。
+pub fn hard_wrap_hanging<S: Clone + PartialEq>(
+    pieces: &[Piece<S>],
+    first: usize,
+    rest: usize,
+) -> Vec<WrappedLine<S>> {
+    let (first, rest) = (first.max(2), rest.max(2));
     let mut lines = Vec::new();
     let mut line: WrappedLine<S> = Vec::new();
     let mut w = 0usize;
     for p in pieces {
         for g in p.text.graphemes(true) {
             let gw = display_width(g);
+            let width = if lines.is_empty() { first } else { rest };
             if w > 0 && w + gw > width {
                 lines.push(std::mem::take(&mut line));
                 w = 0;
@@ -460,5 +470,17 @@ mod tests {
         let lines = plain(&hard_wrap(&pieces, 6));
         assert_eq!(lines, vec!["let 变", "量 = 1", ";"]);
         assert_eq!(plain(&hard_wrap::<()>(&[], 6)), vec![""]);
+    }
+
+    #[test]
+    fn hard_wrap_hanging_uses_narrower_rest() {
+        let pieces = vec![Piece {
+            text: "abcdefghijklmn".to_string(),
+            style: (),
+        }];
+        assert_eq!(
+            plain(&hard_wrap_hanging(&pieces, 6, 3)),
+            vec!["abcdef", "ghi", "jkl", "mn"]
+        );
     }
 }
