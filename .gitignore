@@ -1,2 +1,5 @@
 /target
 *.snap.new
+.DS_Store
+.env
+.env.*

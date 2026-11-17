@@ -99,8 +99,6 @@ jobs:
 
       - name: Update formula
         if: env.HAS_TAP_TOKEN == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p tap/Formula
           scripts/homebrew-formula.sh "$GITHUB_REF_NAME" > tap/Formula/mdr.rb

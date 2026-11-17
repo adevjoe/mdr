@@ -12,19 +12,19 @@ cat notes.md | mdr
 ### Homebrew（macOS）
 
 ```sh
-export HOMEBREW_GITHUB_API_TOKEN=$(gh auth token)   # 仓库是私有的，下载需要令牌
 brew install adevjoe/tap/mdr
 ```
 
-升级用 `brew upgrade mdr`，同样需要设置 `HOMEBREW_GITHUB_API_TOKEN`。
-可以把上面的 `export` 写进 `~/.zshrc`，或者在需要时临时加在命令前面。
+升级用 `brew upgrade mdr`。
+
+也可以在 [Releases](https://github.com/adevjoe/mdr/releases) 页面直接下载 macOS 二进制（arm64 / x86_64）。
 
 ### 从源码安装
 
 需要 Rust 工具链（1.88 或更新版本）。
 
 ```sh
-git clone git@github.com:adevjoe/mdr.git
+git clone https://github.com/adevjoe/mdr.git
 cd mdr
 cargo install --path .
 ```
@@ -192,3 +192,7 @@ INSTA_UPDATE=always cargo test    # 或安装 cargo-insta 后运行 cargo insta 
 - 自定义配色主题；基础样式下代码高亮固定使用 `base16-ocean.dark`，在浅色背景的终端里个别颜色可能偏淡
   （增强样式会按终端背景自动选主题）
 - 网络图片、SVG，以及在 iTerm2 等不支持 kitty 图形协议的终端里显示图片
+
+## 许可证
+
+[MIT](LICENSE)

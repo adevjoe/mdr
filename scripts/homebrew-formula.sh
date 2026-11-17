@@ -3,24 +3,18 @@
 #
 #   scripts/homebrew-formula.sh v0.1.0 > "$(brew --repository adevjoe/tap)/Formula/mdr.rb"
 #
-# 仓库是私有的，release 附件只能通过 GitHub API 带令牌下载，
-# 所以 url 指向 API 附件地址，安装时需要设置 HOMEBREW_GITHUB_API_TOKEN。
-# 需要已登录的 gh（或设置 GH_TOKEN）。
+# 从 release 的 checksums.txt 读取各个附件的 SHA-256，需要能访问 github.com。
 set -euo pipefail
 
 tag=${1:?用法: $0 <tag>，例如 v0.1.0}
 repo=${GITHUB_REPOSITORY:-adevjoe/mdr}
 version=${tag#v}
+base="https://github.com/$repo/releases/download/$tag"
 
-assets=$(gh api "repos/$repo/releases/tags/$tag" --jq '.assets[] | "\(.name) \(.id)"')
-asset_id() {
-  local id
-  id=$(awk -v n="$1" '$1 == n { print $2 }' <<<"$assets")
-  [ -n "$id" ] || { echo "release $tag 里没有 $1" >&2; exit 1; }
-  echo "$id"
+checksums=$(curl -fsSL "$base/checksums.txt") || {
+  echo "下载 $base/checksums.txt 失败，请确认 release $tag 存在" >&2
+  exit 1
 }
-
-checksums=$(gh api -H "Accept: application/octet-stream" "repos/$repo/releases/assets/$(asset_id checksums.txt)")
 sha() {
   local s
   s=$(awk -v n="$1" '$2 == n { print $1 }' <<<"$checksums")
@@ -40,19 +34,11 @@ class Mdr < Formula
 
   on_macos do
     on_arm do
-      url "https://api.github.com/repos/$repo/releases/assets/$(asset_id "$arm")",
-          headers: [
-            "Authorization: Bearer #{ENV.fetch("HOMEBREW_GITHUB_API_TOKEN", "")}",
-            "Accept: application/octet-stream",
-          ]
+      url "$base/$arm"
       sha256 "$(sha "$arm")"
     end
     on_intel do
-      url "https://api.github.com/repos/$repo/releases/assets/$(asset_id "$intel")",
-          headers: [
-            "Authorization: Bearer #{ENV.fetch("HOMEBREW_GITHUB_API_TOKEN", "")}",
-            "Accept: application/octet-stream",
-          ]
+      url "$base/$intel"
       sha256 "$(sha "$intel")"
     end
   end
