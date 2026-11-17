@@ -1,6 +1,6 @@
 name: Release
 
-# 推送 v* 标签时：测试 → 构建 macOS 二进制 → 发布 GitHub Release →（可选）更新 Homebrew tap。
+# 推送 v* 标签时：测试 → 构建 macOS / Linux 二进制 → 发布 GitHub Release →（可选）更新 Homebrew tap。
 on:
   push:
     tags: ["v*"]
@@ -16,8 +16,13 @@ jobs:
     name: build (${{ matrix.target }})
     strategy:
       matrix:
-        target: [aarch64-apple-darwin, x86_64-apple-darwin]
-    runs-on: macos-latest
+        include:
+          - { target: aarch64-apple-darwin, os: macos-latest }
+          - { target: x86_64-apple-darwin, os: macos-latest }
+          # Linux 用 musl 静态链接，不依赖发行版的 glibc 版本
+          - { target: x86_64-unknown-linux-musl, os: ubuntu-latest }
+          - { target: aarch64-unknown-linux-musl, os: ubuntu-24.04-arm }
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
 
@@ -39,12 +44,26 @@ jobs:
             exit 1
           fi
 
+      - name: Install musl tools
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+
       - name: Test
-        if: matrix.target == 'aarch64-apple-darwin'
+        if: matrix.target == 'aarch64-apple-darwin' || matrix.target == 'x86_64-unknown-linux-musl'
         run: cargo test --locked
 
       - name: Build
         run: cargo build --release --locked --target ${{ matrix.target }}
+
+      - name: Smoke test
+        if: matrix.target != 'x86_64-apple-darwin'
+        run: |
+          bin="target/${{ matrix.target }}/release/mdr"
+          "$bin" --version
+          "$bin" --no-color --width 60 examples/sample.md | grep -q "mdr 示例文档"
+          if [ "$RUNNER_OS" = Linux ] && ldd "$bin" 2>&1 | grep -q '=>'; then
+            echo "Linux 二进制应该是静态链接的" >&2; ldd "$bin"; exit 1
+          fi
 
       - name: Package
         run: |

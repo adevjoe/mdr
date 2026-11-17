@@ -9,15 +9,30 @@ cat notes.md | mdr
 
 ## 安装
 
-### Homebrew（macOS）
+### 一键安装（Linux / macOS）
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/adevjoe/mdr/main/install.sh | sh
+```
+
+脚本会按系统和 CPU 下载对应的预编译二进制，校验 SHA-256 后安装到 `~/.local/bin`（root 用户装到 `/usr/local/bin`）。
+Linux 版是静态链接的，支持 x86_64 和 aarch64，不挑发行版；只有 `wget` 没有 `curl` 时把 `curl -fsSL` 换成 `wget -qO-`。
+
+```sh
+# 指定版本或安装目录
+curl -fsSL https://raw.githubusercontent.com/adevjoe/mdr/main/install.sh | sh -s -- --version v0.2.0 --dir /usr/local/bin
+```
+
+升级就是重新运行一遍；卸载删掉安装目录里的 `mdr` 即可。
+也可以在 [Releases](https://github.com/adevjoe/mdr/releases) 页面手动下载。
+
+### Homebrew（macOS / Linux）
 
 ```sh
 brew install adevjoe/tap/mdr
 ```
 
 升级用 `brew upgrade mdr`。
-
-也可以在 [Releases](https://github.com/adevjoe/mdr/releases) 页面直接下载 macOS 二进制（arm64 / x86_64）。
 
 ### 从源码安装
 
@@ -170,14 +185,14 @@ INSTA_UPDATE=always cargo test    # 或安装 cargo-insta 后运行 cargo insta 
 
 ### CI 与发布
 
-- 每次推送到 `main` 和每个 PR，GitHub Actions 都会在 Linux 和 macOS 上跑格式检查、clippy、测试和发布构建（`.github/workflows/ci.yml`）。
+- 每次推送到 `main` 和每个 PR，GitHub Actions 都会在 Linux 和 macOS 上跑格式检查、shellcheck、clippy、测试和发布构建（`.github/workflows/ci.yml`）。
 - 发布新版本：改 `Cargo.toml` 里的 `version`，提交后打同名标签并推送：
 
   ```sh
   git tag v0.2.0 && git push origin main v0.2.0
   ```
 
-  `.github/workflows/release.yml` 会先跑测试，再构建 macOS arm64 / x86_64 二进制，然后发布 GitHub Release。
+  `.github/workflows/release.yml` 会先跑测试，再构建 macOS（arm64 / x86_64）和 Linux（x86_64 / aarch64，musl 静态链接）二进制，然后发布 GitHub Release。
 - Homebrew formula 在 [adevjoe/homebrew-tap](https://github.com/adevjoe/homebrew-tap) 里，由 `scripts/homebrew-formula.sh` 根据 release 生成。
   如果在本仓库的 Actions secrets 里设置了 `HOMEBREW_TAP_TOKEN`（能写 tap 仓库的令牌），发布时会自动更新 formula；
   没设置时，手动运行：

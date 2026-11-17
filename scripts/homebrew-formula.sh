@@ -24,6 +24,25 @@ sha() {
 
 arm=mdr-aarch64-apple-darwin.tar.gz
 intel=mdr-x86_64-apple-darwin.tar.gz
+linux_arm=mdr-aarch64-unknown-linux-musl.tar.gz
+linux_intel=mdr-x86_64-unknown-linux-musl.tar.gz
+
+# 较早的版本没有 Linux 二进制，只有 release 里有时才生成 on_linux。
+on_linux=""
+if grep -q " $linux_intel\$" <<<"$checksums" && grep -q " $linux_arm\$" <<<"$checksums"; then
+  on_linux="
+  on_linux do
+    on_arm do
+      url \"$base/$linux_arm\"
+      sha256 \"$(sha "$linux_arm")\"
+    end
+    on_intel do
+      url \"$base/$linux_intel\"
+      sha256 \"$(sha "$linux_intel")\"
+    end
+  end
+"
+fi
 
 cat <<EOF
 class Mdr < Formula
@@ -42,7 +61,7 @@ class Mdr < Formula
       sha256 "$(sha "$intel")"
     end
   end
-
+$on_linux
   def install
     bin.install "mdr"
   end

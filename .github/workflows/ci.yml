@@ -36,6 +36,12 @@ jobs:
         if: runner.os == 'Linux'
         run: cargo fmt --check
 
+      - name: Shellcheck
+        if: runner.os == 'Linux'
+        run: |
+          shellcheck -s sh install.sh
+          shellcheck scripts/homebrew-formula.sh
+
       - name: Clippy
         run: cargo clippy --all-targets --locked -- -D warnings
 

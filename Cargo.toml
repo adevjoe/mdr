@@ -7,7 +7,6 @@ description = "在终端里渲染 Markdown 的命令行工具"
 license = "MIT"
 readme = "README.md"
 repository = "https://github.com/adevjoe/mdr"
-homepage = "https://github.com/adevjoe/mdr"
 
 [[bin]]
 name = "mdr"
