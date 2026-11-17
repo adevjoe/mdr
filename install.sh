@@ -60,12 +60,20 @@ esac
 
 # ---- 下载工具 ----
 if command -v curl >/dev/null 2>&1; then
-  fetch() { curl -fsSL --retry 3 -o "$2" "$1"; }
+  fetch_once() { curl -fsSL -o "$2" "$1"; }
 elif command -v wget >/dev/null 2>&1; then
-  fetch() { wget -q -O "$2" "$1"; }
+  fetch_once() { wget -q -O "$2" "$1"; }
 else
   die "需要 curl 或 wget"
 fi
+# 网络不稳时重试（curl 自带的 --retry 不处理 TLS 断连等错误，而且老版本 wget 没有重试选项）。
+fetch() {
+  for _ in 1 2 3; do
+    fetch_once "$1" "$2" && return 0
+    sleep 2
+  done
+  return 1
+}
 
 if [ -n "$version" ]; then
   case "$version" in v*) ;; *) version="v$version" ;; esac
