@@ -1,7 +1,7 @@
-//! 排版：把块级树排成一行行带样式的文字（[`Line`]）。
+//! Layout: turns the block tree into lines of styled text ([`Line`]).
 //!
-//! 这里不输出任何转义序列，只决定每行有哪些文字、各自什么样式；
-//! 转成终端字节流的工作在 [`crate::output`]。
+//! No escape sequences are emitted here; this only decides what text each line
+//! holds and how it is styled. Converting to terminal bytes happens in [`crate::output`].
 
 use std::sync::Arc;
 
@@ -13,18 +13,19 @@ use crate::parse::{self, Align, Block, InlineKind, Inlines, ListItem};
 use crate::theme::{self, Look, Panel, Rich};
 use crate::wrap::{self, Item, Piece, display_width};
 
-/// 最小排版宽度。
+/// Minimum layout width.
 pub const MIN_WIDTH: usize = 10;
 
-/// 代码块折行时续行前的标记。
+/// Marker placed before continuation lines of wrapped code.
 const CONTINUATION_MARK: &str = "↪";
-/// 标记加后面一个空格占的列数。
+/// Columns taken by the marker plus the following space.
 const CONTINUATION_WIDTH: usize = 2;
 
-/// 一段带样式的文字。`link` 只在启用终端超链接时才会设置。
+/// A run of styled text. `link` is set only when terminal hyperlinks are enabled.
 ///
-/// `graphic` 是要在这里显示的图片（只在启用图片显示时出现）。图片从这一行开始向下占
-/// `rows` 行，后面紧跟的 `rows - 1` 行是留给它的空行。
+/// `graphic` is an image to display here (only when image display is enabled). The image
+/// occupies `rows` lines starting at this one; the following `rows - 1` lines are blank
+/// lines reserved for it.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Span {
     pub text: String,
@@ -33,7 +34,7 @@ pub struct Span {
     pub graphic: Option<Arc<Graphic>>,
 }
 
-/// 排版后的一行。
+/// A laid-out line.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Line {
     pub spans: Vec<Span>,
@@ -44,7 +45,7 @@ impl Line {
         self.spans.iter().map(|s| display_width(&s.text)).sum()
     }
 
-    /// 去掉样式后的纯文本。
+    /// Plain text with styles stripped.
     pub fn plain(&self) -> String {
         self.spans.iter().map(|s| s.text.as_str()).collect()
     }
@@ -66,7 +67,7 @@ impl Line {
     }
 }
 
-/// 把多行文字转成纯文本，每行以 `\n` 结尾。测试和 `--no-color` 都用它。
+/// Convert lines to plain text, each ending with `\n`. Used by tests and `--no-color`.
 pub fn to_plain(lines: &[Line]) -> String {
     let mut s = String::new();
     for l in lines {
@@ -78,22 +79,25 @@ pub fn to_plain(lines: &[Line]) -> String {
 
 #[derive(Clone, Debug)]
 pub struct RenderOptions {
-    /// 排版宽度（列）。
+    /// Layout width in columns.
     pub width: usize,
-    /// 是否会输出颜色。关闭时行内代码用反引号标出，代码块不做高亮。
+    /// Whether color is output. When off, inline code is wrapped in backticks and code
+    /// blocks are not highlighted.
     pub color: bool,
-    /// 终端是否支持 OSC 8 超链接。不支持时在链接文字后显示网址。
+    /// Whether the terminal supports OSC 8 hyperlinks. If not, the URL is shown after
+    /// the link text.
     pub hyperlinks: bool,
-    /// 终端是否支持 24 位真彩色（影响代码高亮的配色）。
+    /// Whether the terminal supports 24-bit truecolor (affects highlight colors).
     pub truecolor: bool,
-    /// 现代终端的增强样式；`None` 使用基础样式。只在 `color` 为 true 时生效。
+    /// Enhanced styles for modern terminals; `None` uses the basic look. Only applies
+    /// when `color` is true.
     pub rich: Option<Rich>,
-    /// 在终端里直接显示本地图片；`None` 时图片显示为文字。
+    /// Display local images inline in the terminal; `None` shows images as text.
     pub images: Option<ImageOptions>,
 }
 
 impl RenderOptions {
-    /// 无颜色、无超链接的纯文本排版。
+    /// Plain-text layout with no color and no hyperlinks.
     pub fn plain(width: usize) -> Self {
         RenderOptions {
             width,
@@ -113,7 +117,7 @@ impl RenderOptions {
     }
 }
 
-/// 换行器使用的样式类型。
+/// Style type used by the wrapper.
 #[derive(Clone, Debug, Default, PartialEq)]
 struct SpanStyle {
     style: Style,
@@ -134,12 +138,12 @@ fn to_line(pieces: Vec<Piece<SpanStyle>>) -> Line {
     }
 }
 
-/// 解析并排版 Markdown。
+/// Parse and lay out Markdown.
 pub fn render(markdown: &str, opts: &RenderOptions) -> Vec<Line> {
     render_blocks(&parse::parse(markdown), opts)
 }
 
-/// 排版已经解析好的块。
+/// Lay out already-parsed blocks.
 pub fn render_blocks(blocks: &[Block], opts: &RenderOptions) -> Vec<Line> {
     let r = Renderer {
         opts,
@@ -153,8 +157,8 @@ struct Renderer<'a> {
     look: Look,
 }
 
-/// 给每行加前缀：第一行用 `first`，其余行用 `rest`。空行只保留前缀里的非空白部分，
-/// 避免行尾多出空格。
+/// Prefix each line: the first with `first`, the rest with `rest`. Empty lines keep only
+/// the non-whitespace part of the prefix, to avoid trailing spaces.
 fn prefix_lines(lines: Vec<Line>, first: &[Span], rest: &[Span]) -> Vec<Line> {
     lines
         .into_iter()
@@ -188,7 +192,7 @@ fn span(text: impl Into<String>, style: Style) -> Span {
     }
 }
 
-/// 把制表符展开成空格（制表位每 4 列）。
+/// Expand tabs to spaces (tab stops every 4 columns).
 fn expand_tabs(s: &str) -> String {
     if !s.contains('\t') {
         return s.to_string();
@@ -208,11 +212,12 @@ fn expand_tabs(s: &str) -> String {
     out
 }
 
-/// 表格列宽分配。
+/// Allocate table column widths.
 ///
-/// `natural` 是各列不换行时的宽度，`min` 是各列最长单词的宽度。总宽放得下就用自然宽度；
-/// 否则反复把最宽的一列减 1：先只缩到不拆单词为止，还放不下再继续缩，
-/// 但每列至少保留 2 列（放得下一个全角字符）。
+/// `natural` is each column's unwrapped width and `min` its longest word. If the total
+/// fits, natural widths are used; otherwise the widest column is repeatedly shrunk by 1:
+/// first only down to its longest word, then further if still needed, but never below
+/// 2 columns (enough for one full-width character).
 pub fn fit_columns(natural: &[usize], min: &[usize], available: usize) -> Vec<usize> {
     let mut widths: Vec<usize> = natural.iter().map(|&w| w.max(1)).collect();
     let mut total: usize = widths.iter().sum();
@@ -299,10 +304,11 @@ impl Renderer<'_> {
         }
     }
 
-    /// 行内内容 → 换行器输入。处理图片文字、无颜色时的反引号、以及链接网址后缀。
+    /// Inline content -> wrapper input. Handles image text, backticks when uncolored, and
+    /// link URL suffixes.
     fn inline_items(&self, inlines: &Inlines, base: Style) -> Vec<Item<SpanStyle>> {
         let mut out = Vec::new();
-        // 当前链接：(网址, 链接文字)。
+        // Current link: (URL, link text).
         let mut group: Option<(String, String)> = None;
         for inline in inlines {
             let link = inline.style.link.as_deref();
@@ -319,9 +325,9 @@ impl Renderer<'_> {
                     }
                     let shown = if inline.style.image {
                         if t.trim().is_empty() {
-                            "[图片]".to_string()
+                            "[image]".to_string()
                         } else {
-                            format!("[图片: {t}]")
+                            format!("[image: {t}]")
                         }
                     } else if inline.style.code && !self.opts.color {
                         format!("`{t}`")
@@ -371,8 +377,9 @@ impl Renderer<'_> {
             .collect()
     }
 
-    /// 只包含图片的段落：在终端里直接显示图片，下面附上替代文字。
-    /// 没有启用图片显示、段落里还有别的文字、或有图片读不了时返回 `None`，按文字显示。
+    /// A paragraph containing only images: display them in the terminal with the alt text
+    /// below. Returns `None` (render as text) when image display is disabled, the paragraph
+    /// has other text, or an image can't be read.
     fn image_paragraph(&self, content: &Inlines, width: usize) -> Option<Vec<Line>> {
         let opts = self.opts.images.as_ref()?;
         let mut images = Vec::new();
@@ -511,7 +518,8 @@ impl Renderer<'_> {
         out
     }
 
-    /// 增强样式的代码块：铺满底色的面板，语言名靠右放在顶部。
+    /// Code block in the enhanced look: a fully filled panel with the language name
+    /// right-aligned at the top.
     ///
     /// ```text
     ///                    rust
@@ -536,7 +544,7 @@ impl Renderer<'_> {
                 st
             }
         };
-        // 把一行补满到面板宽度，左右各留一格空白。
+        // Pad a line to the panel width, with one blank column on each side.
         let fill = |spans: Vec<Span>| -> Line {
             let mut line = Line::styled(" ", base);
             line.spans.extend(spans);
@@ -655,7 +663,7 @@ impl Renderer<'_> {
                 .unwrap_or_default()
         };
 
-        // 每列的自然宽度（单元格不换行时的最大宽度）和最长单词宽度。
+        // Each column's natural width (max unwrapped cell width) and longest word width.
         let mut natural = vec![0usize; ncols];
         let mut min = vec![0usize; ncols];
         for (r, row) in std::iter::once(head)
@@ -674,7 +682,7 @@ impl Renderer<'_> {
                 min[c] = min[c].max(wrap::min_width(&items));
             }
         }
-        // 边框占用：每列左右各一个空格 + 竖线。
+        // Border overhead: one space on each side of every column, plus the bars.
         let overhead = 3 * ncols + 1;
         let widths = fit_columns(&natural, &min, width.saturating_sub(overhead));
 
@@ -727,8 +735,8 @@ impl Renderer<'_> {
             .iter()
             .map(|row| render_row(row, Style::new()))
             .collect();
-        // 只要有一行换了行，就在每两行之间画分隔线，否则看不出一行从哪里结束。
-        // 每行都只占一行的表格保持紧凑。
+        // If any row wraps, draw separators between all rows; otherwise it's unclear
+        // where a row ends. Tables whose rows are all single-line stay compact.
         let separate = body.iter().any(|r| r.len() > 1);
         for (i, row) in body.into_iter().enumerate() {
             if i > 0 && separate {
@@ -741,8 +749,9 @@ impl Renderer<'_> {
     }
 }
 
-/// 代码行按宽度硬折行。续行对齐原行的缩进，再留出 ↪ 标记的位置；缩进最多占一半宽度，
-/// 保证续行还有地方放内容。返回 (续行缩进, 折好的行)。
+/// Hard-wrap a code line to the width. Continuation lines align with the original
+/// indentation and leave room for the ↪ marker; the indent is capped at half the width
+/// so continuations still have room for content. Returns (continuation indent, lines).
 fn wrap_code_line(line: &str, pieces: &[Piece<SpanStyle>], inner: usize) -> (usize, Vec<Line>) {
     let indent = line.len() - line.trim_start_matches(' ').len();
     let indent = indent.min(inner / 2);
@@ -765,7 +774,7 @@ mod tests {
             .collect()
     }
 
-    /// 一行中所有表格竖线所在的显示列。
+    /// Display columns of all table bars in a line.
     fn bar_columns(line: &str) -> Vec<usize> {
         let mut cols = Vec::new();
         let mut col = 0;
@@ -788,7 +797,7 @@ mod tests {
             assert_eq!(
                 bar_columns(l),
                 expected,
-                "未对齐的行: {l:?}\n{}",
+                "misaligned line: {l:?}\n{}",
                 lines.join("\n")
             );
             assert_eq!(display_width(l), display_width(&lines[0]), "{l:?}");
@@ -800,16 +809,16 @@ mod tests {
         assert_eq!(fit_columns(&[3, 5, 2], &[0; 3], 20), vec![3, 5, 2]);
         assert_eq!(fit_columns(&[4, 20, 6], &[0; 3], 20), vec![4, 10, 6]);
         assert_eq!(fit_columns(&[10, 10], &[0; 2], 10), vec![5, 5]);
-        // 放不下时也不低于 2 列。
+        // Never below 2 columns, even when it doesn't fit.
         assert_eq!(fit_columns(&[10, 10], &[0; 2], 2), vec![2, 2]);
         assert_eq!(fit_columns(&[0, 1], &[0; 2], 0), vec![1, 1]);
     }
 
     #[test]
     fn fit_columns_avoids_splitting_words() {
-        // 第 1 列是一个 10 列宽的单词，应该由其他列让出空间。
+        // Column 1 is a 10-column word; other columns should give up space.
         assert_eq!(fit_columns(&[10, 12], &[10, 2], 16), vec![10, 6]);
-        // 所有列都到单词宽度了还放不下，才拆单词。
+        // Words are split only when all columns are at word width and it still doesn't fit.
         assert_eq!(fit_columns(&[10, 12], &[10, 2], 8), vec![6, 2]);
     }
 
@@ -825,7 +834,7 @@ mod tests {
         let lines = plain(md, 80);
         assert_eq!(lines.len(), 7);
         assert_table_aligned(&lines);
-        // 对齐方式：左 / 居中 / 右。
+        // Alignment: left / center / right.
         assert_eq!(
             lines[3],
             "│ 苹果            │ 红色的水果  │ 数量 │".replace("数量", "   3")
@@ -860,7 +869,7 @@ mod tests {
                 "└──────┴───────────────┘",
             ]
         );
-        // 全是单行的表格不加分隔线。
+        // Tables with only single-line rows get no separators.
         let lines = plain(md, 80);
         assert_eq!(lines.iter().filter(|l| l.starts_with('├')).count(), 1);
     }
@@ -977,7 +986,7 @@ mod tests {
     #[test]
     fn image_shows_alt_and_url() {
         let lines = plain("![示意图](img/a.png)", 80);
-        assert_eq!(lines, vec!["[图片: 示意图] <img/a.png>"]);
+        assert_eq!(lines, vec!["[image: 示意图] <img/a.png>"]);
     }
 
     #[test]
@@ -1107,14 +1116,14 @@ mod tests {
         else {
             panic!("rich look has a panel");
         };
-        // 每一格都铺上底色。
+        // Every cell is filled with the background.
         for l in &lines {
             assert_eq!(l.width(), 20);
             for s in &l.spans {
                 assert_eq!(s.style.get_bg_color(), Some(panel.bg), "{s:?}");
             }
         }
-        // 深色背景上的底色比背景稍亮。
+        // On a dark background the panel is slightly lighter.
         assert_eq!(panel.bg, anstyle::Color::Rgb(anstyle::RgbColor(57, 61, 68)));
     }
 
@@ -1123,12 +1132,12 @@ mod tests {
         let light = rich_opts(40, Some((255, 255, 255))).look();
         assert!(light.light);
         assert!(light.code_chip.is_some());
-        // 不知道背景色时用高亮主题自己的深色面板，并指定文字颜色。
+        // With an unknown background, use the highlight theme's own dark panel and text color.
         let unknown = rich_opts(40, None).look();
         assert!(!unknown.light);
         assert!(unknown.code_chip.is_none());
         assert!(unknown.panel.unwrap().fg.is_some());
-        // 没有颜色时增强样式不生效。
+        // The enhanced look doesn't apply without color.
         let no_color = RenderOptions {
             color: false,
             ..rich_opts(40, None)
@@ -1175,7 +1184,7 @@ mod tests {
             ..rich_opts(40, None)
         };
 
-        // 100×60 像素 → 10 列 × 3 行，下面是替代文字。
+        // 100×60 pixels -> 10 columns × 3 rows, with the alt text below.
         let lines = render("> ![示意图](pic.png)\n", &opts);
         assert_eq!(lines.len(), 4);
         let g = lines[0]
@@ -1187,7 +1196,7 @@ mod tests {
         let text: Vec<String> = lines.iter().map(Line::plain).collect();
         assert_eq!(text, vec!["▎ ", "▎", "▎", "▎ 示意图"]);
 
-        // 和文字混在一起、网络图片、读不到的文件：仍按文字显示。
+        // Mixed with text, remote images, unreadable files: still shown as text.
         for md in [
             "看图 ![示意图](pic.png)",
             "![远程](https://a.b/x.png)",
@@ -1199,7 +1208,7 @@ mod tests {
                     .iter()
                     .all(|l| l.spans.iter().all(|s| s.graphic.is_none()))
             );
-            assert!(lines[0].plain().contains("[图片: "), "{md}");
+            assert!(lines[0].plain().contains("[image: "), "{md}");
         }
         std::fs::remove_dir_all(dir).unwrap();
     }

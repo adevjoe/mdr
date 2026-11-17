@@ -1,7 +1,8 @@
-//! 各元素的终端样式。文字颜色只用 16 色，跟随用户终端的配色方案。
+//! Terminal styles for each element. Text colors use only the 16 ANSI colors,
+//! so they follow the user's terminal color scheme.
 //!
-//! 在 Ghostty 等现代终端里（[`Rich`]）会额外使用背景色、样式化下划线等效果，
-//! 具体取舍集中在 [`Look`] 里。
+//! On modern terminals such as Ghostty ([`Rich`]), extra effects like background
+//! colors and styled underlines are used; those choices live in [`Look`].
 
 use anstyle::{AnsiColor, Color, Effects, Style};
 
@@ -9,44 +10,45 @@ use crate::highlight;
 use crate::parse::{AlertKind, InlineStyle};
 use crate::term;
 
-/// 现代终端（Ghostty、kitty、WezTerm）的增强显示能力。
+/// Enhanced display capabilities of modern terminals (Ghostty, kitty, WezTerm).
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Rich {
-    /// 支持波浪线、点线等样式化下划线（SGR 4:x）。
+    /// Supports styled underlines such as curly and dotted (SGR 4:x).
     pub styled_underline: bool,
-    /// 终端背景色（OSC 11 查询结果），用来调出和背景协调的代码底色。
+    /// Terminal background color (from an OSC 11 query), used to derive a code
+    /// background that blends with it.
     pub background: Option<(u8, u8, u8)>,
 }
 
-/// 代码块面板的配色。
+/// Colors of the code block panel.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Panel {
     pub bg: Color,
-    /// 面板里的默认文字颜色；`None` 表示沿用终端前景色。
+    /// Default text color inside the panel; `None` keeps the terminal foreground.
     pub fg: Option<Color>,
-    /// 语言标签的样式。
+    /// Style of the language label.
     pub label: Style,
 }
 
-/// 一次排版使用的整体外观。
+/// Overall look used for one layout pass.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Look {
-    /// 链接使用点线下划线。
+    /// Links use a dotted underline.
     pub styled_underline: bool,
-    /// 行内代码的背景色。
+    /// Background color of inline code.
     pub code_chip: Option<Color>,
-    /// 代码块画成带底色的面板；`None` 时用边框线。
+    /// Draw code blocks as a filled panel; `None` uses border lines.
     pub panel: Option<Panel>,
-    /// 代码高亮使用浅色主题。
+    /// Use a light theme for syntax highlighting.
     pub light: bool,
-    /// 引用块左侧的竖条。
+    /// Vertical bar on the left of block quotes.
     pub quote_bar: &'static str,
-    /// 表格使用圆角。
+    /// Tables use rounded corners.
     pub rounded: bool,
 }
 
 impl Look {
-    /// 基础外观：适用于所有终端。
+    /// Basic look: works on every terminal.
     pub fn basic() -> Self {
         Look {
             styled_underline: false,
@@ -58,8 +60,10 @@ impl Look {
         }
     }
 
-    /// 现代终端的增强外观。知道终端背景色时，代码底色在背景色上略微提亮（深色背景）
-    /// 或压暗（浅色背景），文字沿用终端前景色；不知道时用高亮主题自带的深色面板。
+    /// Enhanced look for modern terminals. When the terminal background is known, the
+    /// code background is slightly lighter (dark background) or darker (light background)
+    /// than it, and text keeps the terminal foreground; otherwise the highlight theme's
+    /// own dark panel is used.
     pub fn rich(rich: &Rich, truecolor: bool) -> Self {
         let (panel, light, chip) = match rich.background {
             Some(bg) => {
@@ -95,7 +99,7 @@ impl Look {
     }
 }
 
-/// 代码底色：深色背景提亮一点，浅色背景压暗一点。
+/// Code background: slightly lighter on dark backgrounds, slightly darker on light ones.
 pub fn shade((r, g, b): (u8, u8, u8), light: bool) -> (u8, u8, u8) {
     let f = |c: u8| -> u8 {
         let c = f64::from(c);
@@ -118,22 +122,24 @@ pub fn heading(level: u8) -> Style {
         1 => fg(AnsiColor::BrightMagenta).bold(),
         2 => fg(AnsiColor::BrightCyan).bold(),
         3 => fg(AnsiColor::BrightYellow).bold(),
-        // 避开绿色：那是行内代码的颜色。
+        // Avoid green: that's the inline code color.
         4 => fg(AnsiColor::BrightBlue).bold(),
         5 => fg(AnsiColor::Cyan).bold(),
         _ => fg(AnsiColor::Magenta).bold(),
     }
 }
 
-/// 行内代码：标准绿色（非亮色、不加粗），在深浅色终端里都不刺眼。
+/// Inline code: standard green (not bright, not bold), easy on the eyes in both dark
+/// and light terminals.
 pub const fn code_inline() -> Style {
     fg(AnsiColor::Green)
 }
 
-/// 在块级基础样式上叠加行内样式。
+/// Layer inline styles on top of the block's base style.
 ///
-/// 行内代码不继承块级样式（标题的颜色和加粗、表头的加粗），只保留自身的粗体/斜体/删除线，
-/// 这样在标题里也能和周围的文字区分开。
+/// Inline code does not inherit the block style (heading color and bold, table header
+/// bold); it keeps only its own bold/italic/strikethrough, so it stands out from the
+/// surrounding text even inside headings.
 pub fn inline(base: Style, s: &InlineStyle, look: &Look) -> Style {
     let mut st = if s.code {
         code_inline().bg_color(look.code_chip)
@@ -162,7 +168,7 @@ pub fn inline(base: Style, s: &InlineStyle, look: &Look) -> Style {
     st
 }
 
-/// 不支持超链接时，跟在链接文字后面的网址。
+/// URL shown after link text when hyperlinks are not supported.
 pub const fn link_url() -> Style {
     fg(AnsiColor::BrightBlack)
 }

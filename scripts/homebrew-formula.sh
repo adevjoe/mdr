@@ -1,24 +1,24 @@
 #!/usr/bin/env bash
-# 根据某个 GitHub Release 生成 Homebrew formula，输出到标准输出。
+# Generate the Homebrew formula for a GitHub Release and print it to stdout.
 #
 #   scripts/homebrew-formula.sh v0.1.0 > "$(brew --repository adevjoe/tap)/Formula/mdr.rb"
 #
-# 从 release 的 checksums.txt 读取各个附件的 SHA-256，需要能访问 github.com。
+# Reads each asset's SHA-256 from the release's checksums.txt, so github.com must be reachable.
 set -euo pipefail
 
-tag=${1:?用法: $0 <tag>，例如 v0.1.0}
+tag=${1:?usage: $0 <tag>, e.g. v0.1.0}
 repo=${GITHUB_REPOSITORY:-adevjoe/mdr}
 version=${tag#v}
 base="https://github.com/$repo/releases/download/$tag"
 
 checksums=$(curl -fsSL "$base/checksums.txt") || {
-  echo "下载 $base/checksums.txt 失败，请确认 release $tag 存在" >&2
+  echo "failed to download $base/checksums.txt; make sure release $tag exists" >&2
   exit 1
 }
 sha() {
   local s
   s=$(awk -v n="$1" '$2 == n { print $1 }' <<<"$checksums")
-  [ -n "$s" ] || { echo "checksums.txt 里没有 $1" >&2; exit 1; }
+  [ -n "$s" ] || { echo "$1 is not listed in checksums.txt" >&2; exit 1; }
   echo "$s"
 }
 
@@ -27,7 +27,7 @@ intel=mdr-x86_64-apple-darwin.tar.gz
 linux_arm=mdr-aarch64-unknown-linux-musl.tar.gz
 linux_intel=mdr-x86_64-unknown-linux-musl.tar.gz
 
-# 较早的版本没有 Linux 二进制，只有 release 里有时才生成 on_linux。
+# Older releases have no Linux binaries; only emit on_linux when the release has them.
 on_linux=""
 if grep -q " $linux_intel\$" <<<"$checksums" && grep -q " $linux_arm\$" <<<"$checksums"; then
   on_linux="

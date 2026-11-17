@@ -1,42 +1,62 @@
 # mdr
 
-在终端里渲染 Markdown 的命令行工具，用 Rust 编写。对中文友好：全角字符按 2 列宽计算，换行和表格都不会错位。
+**English** | [简体中文](README.zh-CN.md)
+
+A command-line tool that renders Markdown in the terminal, written in Rust. It is CJK-friendly:
+full-width characters count as two columns, so wrapped text and tables never fall out of alignment.
 
 ```
 mdr README.md
 cat notes.md | mdr
 ```
 
-## 安装
+## Screenshots
 
-### 一键安装（Linux / macOS）
+In macOS Terminal (basic style):
 
-```sh
-curl -fsSL https://raw.githubusercontent.com/adevjoe/mdr/main/install.sh | sh
-```
+![mdr rendering a Markdown document in macOS Terminal](docs/images/render-basic.png)
 
-脚本会按系统和 CPU 下载对应的预编译二进制，校验 SHA-256 后安装到 `~/.local/bin`（root 用户装到 `/usr/local/bin`）。
-Linux 版是静态链接的，支持 x86_64 和 aarch64，不挑发行版；只有 `wget` 没有 `curl` 时把 `curl -fsSL` 换成 `wget -qO-`。
+The same document in Ghostty, where mdr switches to the rich style: code panels, inline code backgrounds,
+dotted link underlines, rounded tables and inline images:
 
-```sh
-# 指定版本或安装目录
-curl -fsSL https://raw.githubusercontent.com/adevjoe/mdr/main/install.sh | sh -s -- --version v0.2.0 --dir /usr/local/bin
-```
+![mdr rendering the same document in Ghostty](docs/images/render-ghostty.png)
 
-升级就是重新运行一遍；卸载删掉安装目录里的 `mdr` 即可。
-也可以在 [Releases](https://github.com/adevjoe/mdr/releases) 页面手动下载。
+The document is [`docs/images/demo.md`](docs/images/demo.md); for every supported element, see
+[`examples/sample.md`](examples/sample.md).
 
-### Homebrew（macOS / Linux）
+## Installation
+
+### macOS: Homebrew (recommended)
 
 ```sh
 brew install adevjoe/tap/mdr
 ```
 
-升级用 `brew upgrade mdr`。
+Upgrade with `brew upgrade mdr`, uninstall with `brew uninstall mdr`.
+Homebrew on Linux works the same way, if you already use it there.
 
-### 从源码安装
+### Linux: install script (recommended)
 
-需要 Rust 工具链（1.88 或更新版本）。
+```sh
+curl -fsSL https://raw.githubusercontent.com/adevjoe/mdr/main/install.sh | sh
+```
+
+The script downloads the prebuilt binary for your OS and CPU, verifies its SHA-256 and installs it to
+`~/.local/bin` (`/usr/local/bin` for root). The Linux build is statically linked and supports x86_64 and
+aarch64 on any distribution. If you have `wget` but no `curl`, replace `curl -fsSL` with `wget -qO-`.
+
+```sh
+# Pick a version or install directory
+curl -fsSL https://raw.githubusercontent.com/adevjoe/mdr/main/install.sh | sh -s -- --version v0.2.0 --dir /usr/local/bin
+```
+
+To upgrade, run it again; to uninstall, delete `mdr` from the install directory.
+The script also works on macOS if you'd rather not use Homebrew.
+You can also download binaries manually from the [Releases](https://github.com/adevjoe/mdr/releases) page.
+
+### From source
+
+Requires a Rust toolchain (1.88 or newer).
 
 ```sh
 git clone https://github.com/adevjoe/mdr.git
@@ -44,170 +64,184 @@ cd mdr
 cargo install --path .
 ```
 
-`cargo install` 会把 `mdr` 装到 `~/.cargo/bin`，请确认这个目录在 `PATH` 里。
+`cargo install` puts `mdr` in `~/.cargo/bin`; make sure that directory is on your `PATH`.
 
-不想安装的话，也可以只构建、直接运行：
+If you'd rather not install it, just build and run:
 
 ```sh
 cargo build --release
 ./target/release/mdr examples/sample.md
 ```
 
-卸载：`cargo uninstall mdr`。
+Uninstall with `cargo uninstall mdr`.
 
-## 使用
-
-```sh
-mdr 文件.md              # 渲染文件
-cat 文件.md | mdr        # 从标准输入读取
-mdr - < 文件.md          # 同上，"-" 表示标准输入
-mdr --width 60 文件.md   # 指定排版宽度
-mdr --no-color 文件.md   # 不要颜色
-mdr --no-pager 文件.md   # 内容很长也直接输出，不进分页器
-```
-
-想看看所有元素的效果，可以运行：
+## Usage
 
 ```sh
-mdr examples/sample.md
+mdr file.md              # render a file
+cat file.md | mdr        # read from standard input
+mdr - < file.md          # same; "-" means standard input
+mdr --width 60 file.md   # set the layout width
+mdr --no-color file.md   # no colors
+mdr --no-pager file.md   # print directly even when the output is long
 ```
 
-### 参数
-
-| 参数 | 说明 |
-|------|------|
-| `FILE` | 要渲染的文件。省略或为 `-` 时从标准输入读取 |
-| `-w, --width <N>` | 排版宽度（至少 10 列）。默认取终端宽度，取不到时用 `$COLUMNS`，再不行用 80 |
-| `--no-color` | 不输出颜色和样式，等同于 `--color never` |
-| `--color <auto\|always\|never>` | 何时输出颜色，默认 `auto` |
-| `--hyperlinks <auto\|always\|never>` | 何时把链接做成可点击的终端超链接，默认 `auto` |
-| `--style <auto\|rich\|basic>` | 显示风格。`auto` 在 Ghostty、kitty、WezTerm 里用增强效果，其他终端用基础效果 |
-| `--images <auto\|always\|never>` | 何时在终端里直接显示本地图片，默认 `auto`（Ghostty、kitty） |
-| `--no-pager` | 不使用分页器 |
-| `-h, --help` / `-V, --version` | 帮助 / 版本 |
-
-### 颜色
-
-默认（`--color auto`）只在输出到终端时使用颜色。下面几种情况会自动去掉颜色，输出纯文本：
-
-- 输出被管道或重定向接走，例如 `mdr a.md > a.txt`、`mdr a.md | grep 标题`；
-- 设置了 `NO_COLOR` 环境变量（值非空），参见 [no-color.org](https://no-color.org/)；
-- 使用了 `--no-color` 或 `--color never`。
-
-命令行参数优先于环境变量：`--color always` 即使设置了 `NO_COLOR`、即使输出到管道也会带颜色，
-适合 `mdr --color always a.md | less -R` 这样的用法。
-
-没有颜色时，行内代码会用反引号 `` ` `` 标出，以便和正文区分。
-
-### 链接
-
-终端支持 [OSC 8 超链接](https://gist.github.com/egmontkob/eb114294efbcd5adb1944c9f3cb5feda) 时，链接文字可以直接点击（Ghostty、iTerm2、WezTerm、kitty、VS Code 终端、Windows Terminal 等）；
-否则在链接文字后面用 `<网址>` 显示地址。终端是否支持靠环境变量判断，判断不准时可以用 `--hyperlinks always` 或 `--hyperlinks never` 指定。
-
-图片在终端里显示为 `[图片: 替代文字]`，并附上图片地址（或做成可点击的链接）。
-在 Ghostty 和 kitty 里，单独成段的本地图片会直接显示出来，见下一节。
-
-### Ghostty 等现代终端
-
-在 Ghostty（以及 kitty、WezTerm）里，mdr 会自动切换到增强样式（`--style rich`）：
-
-- **代码块**画成铺满底色的面板，语言名靠右显示；**行内代码**也带同样的底色。
-  底色是在终端背景色上略微调亮（深色背景）或调暗（浅色背景）得到的，跟随你的配色方案；
-  代码高亮也会按背景深浅选用深色或浅色主题。终端背景色通过 OSC 11 查询得到。
-- **链接**用点线下划线，和普通下划线区分开。
-- **引用块和提示块**用更粗的 `▎` 竖条（Ghostty 自己绘制方块字符，上下行之间没有缝隙），**表格**用圆角边框。
-- **图片**：单独成段的本地图片（`![说明](图/示意.png)`）用 kitty 图形协议直接显示，下面附上替代文字。
-  支持 PNG、JPEG、GIF、WebP；相对路径以 Markdown 文件所在目录为准；宽度不超过排版宽度，高度不超过窗口的三分之二。
-  网络图片不下载，和文字混在一起的图片（比如徽章）仍按文字显示。
-- 输出使用同步输出模式（DEC 2026），大文档一次性刷新，不会闪烁。
-
-说明：
-
-- 分页器 `less` 显示不了图片。内容超过一屏、交给分页器时，图片退回文字显示；想看图片可以加 `--no-pager`。
-- 在 tmux / screen 里不启用增强样式和图片（它们会拦截这些转义序列），需要时可以用 `--style rich` 强制打开。
-- 通过 ssh 登录时，只要 `TERM` 是 `xterm-ghostty` 也会识别为 Ghostty。
-- 不喜欢增强效果可以用 `--style basic`，只关图片用 `--images never`。
-
-### 分页器
-
-输出到终端且内容超过一屏时，mdr 会把结果交给 `less -R` 显示，按 `q` 退出。
-
-- 用 `--no-pager` 关闭；
-- 用 `MDR_PAGER` 环境变量换成别的分页器，例如 `MDR_PAGER="less -RS"`；
-- 分页器启动失败时直接输出到终端。
-
-## 支持的元素
-
-- 标题（六级，样式各不相同；一、二级带下划线，三级以下显示 `###` 前缀）
-- 粗体、斜体、删除线、行内代码，以及它们的嵌套
-- 代码块：按语言语法高亮（基于 syntect，支持 Rust、Python、JavaScript/TypeScript、Go、Shell、JSON、YAML 等常见语言），过长的行会折行
-- 有序、无序、嵌套列表，任务列表（`- [x]` / `- [ ]`）
-- 引用块（可嵌套）和 GitHub 风格的提示块（`> [!NOTE]`、`> [!WARNING]` 等）
-- 表格：按显示宽度对齐，支持左/中/右对齐；太宽时单元格内自动换行
-- 分隔线、链接、图片、HTML 块（原样显示）
-
-### 换行规则
-
-- 按终端宽度自动换行，中文等全角字符算 2 列；
-- 英文单词不会被拆开（除非一个单词比整行还长）；
-- 简单的避头尾：`，。！？）」` 等不会出现在行首，`（「《` 等不会出现在行尾；
-- 源文件里中文之间的换行不会变成多余的空格。
-
-## 开发
+To see every element in action, run:
 
 ```sh
-cargo build            # 构建
-cargo test             # 单元测试 + 快照测试
-cargo clippy           # 静态检查
+mdr examples/sample.md          # English sample
+mdr examples/sample.zh-CN.md    # Chinese sample
 ```
 
-代码结构：解析、排版和终端输出相互独立，排版结果是「带样式的文字行」，不含转义序列，方便测试。
+### Options
 
-| 文件 | 作用 |
-|------|------|
-| `src/parse.rs` | 用 pulldown-cmark 把 Markdown 解析成块级树 |
-| `src/wrap.rs` | 按显示宽度换行（宽字符、避头尾、软换行） |
-| `src/render.rs` | 排版：标题、列表缩进、引用、代码块、表格列宽等 |
-| `src/highlight.rs` | 代码块语法高亮 |
-| `src/theme.rs` | 各元素的颜色与样式（基础 / 增强两套外观） |
-| `src/term.rs` | 识别 Ghostty 等终端、查询背景色和格子像素尺寸 |
-| `src/graphics.rs` | 读取、缩放图片，生成 kitty 图形协议序列 |
-| `src/output.rs` | 生成 ANSI 样式、OSC 8 超链接和图片转义 |
-| `src/main.rs` | 命令行参数、颜色与终端能力判断、终端宽度、分页器 |
+| Option | Description |
+|--------|-------------|
+| `FILE` | File to render. Reads standard input when omitted or `-` |
+| `-w, --width <N>` | Layout width (at least 10 columns). Defaults to the terminal width, then `$COLUMNS`, then 80 |
+| `--no-color` | No colors or styles; same as `--color never` |
+| `--color <auto\|always\|never>` | When to use colors. Default `auto` |
+| `--hyperlinks <auto\|always\|never>` | When to make links clickable terminal hyperlinks. Default `auto` |
+| `--style <auto\|rich\|basic>` | Display style. `auto` uses the rich style in Ghostty, kitty and WezTerm, basic elsewhere |
+| `--images <auto\|always\|never>` | When to display local images in the terminal. Default `auto` (Ghostty, kitty) |
+| `--no-pager` | Don't use a pager |
+| `-h, --help` / `-V, --version` | Help / version |
 
-快照测试在 `tests/snapshots.rs`，快照文件位于 `tests/snapshots/`。修改排版后如需更新快照：
+### Colors
+
+By default (`--color auto`) colors are only used when writing to a terminal. Output is plain text when:
+
+- output is piped or redirected, e.g. `mdr a.md > a.txt` or `mdr a.md | grep Title`;
+- the `NO_COLOR` environment variable is set to a non-empty value (see [no-color.org](https://no-color.org/));
+- `--no-color` or `--color never` is given.
+
+Command-line options take precedence over the environment: `--color always` emits colors even with
+`NO_COLOR` set or when piped, which suits usage like `mdr --color always a.md | less -R`.
+
+Without colors, inline code is wrapped in backticks `` ` `` so it stands apart from the surrounding text.
+
+### Links
+
+In terminals that support [OSC 8 hyperlinks](https://gist.github.com/egmontkob/eb114294efbcd5adb1944c9f3cb5feda)
+(Ghostty, iTerm2, WezTerm, kitty, the VS Code terminal, Windows Terminal, ...), link text is clickable;
+elsewhere the address is shown after the link text as `<url>`. Support is detected from environment variables;
+if detection gets it wrong, use `--hyperlinks always` or `--hyperlinks never`.
+
+Images are shown as `[image: alt text]` followed by the image address (or as a clickable link).
+In Ghostty and kitty, a local image in a paragraph of its own is displayed inline; see the next section.
+
+### Ghostty and other modern terminals
+
+In Ghostty (as well as kitty and WezTerm), mdr automatically switches to the rich style (`--style rich`):
+
+- **Code blocks** are drawn as solid background panels with the language name on the right; **inline code**
+  gets the same background. The background is the terminal's background color slightly lightened (dark
+  themes) or darkened (light themes), so it follows your color scheme; syntax highlighting also picks a
+  dark or light theme to match. The background color is queried with OSC 11.
+- **Links** use a dotted underline, distinct from a regular underline.
+- **Block quotes and alerts** use a heavier `▎` bar (Ghostty draws block characters itself, leaving no gaps
+  between lines), and **tables** have rounded corners.
+- **Images**: a local image in a paragraph of its own (`![caption](img/diagram.png)`) is displayed with the
+  kitty graphics protocol, with its alt text underneath. PNG, JPEG, GIF and WebP are supported; relative paths
+  are resolved against the Markdown file's directory; images are no wider than the layout width and no taller
+  than two thirds of the window. Remote images are not downloaded, and images mixed with text (such as badges)
+  are still shown as text.
+- Output uses synchronized output (DEC 2026), so large documents are drawn at once without flicker.
+
+Notes:
+
+- The `less` pager can't show images. When the output is longer than one screen and goes to the pager,
+  images fall back to text; add `--no-pager` to see them.
+- Inside tmux / screen the rich style and images are off (they intercept these escape sequences);
+  force them with `--style rich` if needed.
+- Over ssh, Ghostty is still recognized as long as `TERM` is `xterm-ghostty`.
+- Prefer the plain look? Use `--style basic`; to turn off only images, use `--images never`.
+
+### Pager
+
+When writing to a terminal and the output is longer than one screen, mdr pipes it to `less -R`; press `q` to quit.
+
+- Disable it with `--no-pager`;
+- choose another pager with the `MDR_PAGER` environment variable, e.g. `MDR_PAGER="less -RS"`;
+- if the pager fails to start, output goes straight to the terminal.
+
+## Supported elements
+
+- Headings (six levels, each styled differently; levels 1–2 are underlined, level 3 and below show a `###` prefix)
+- Bold, italic, strikethrough, inline code, and any nesting of them
+- Code blocks: syntax highlighting by language (via syntect: Rust, Python, JavaScript/TypeScript, Go, Shell,
+  JSON, YAML and other common languages); overlong lines are wrapped
+- Ordered, unordered and nested lists; task lists (`- [x]` / `- [ ]`)
+- Block quotes (nestable) and GitHub-style alerts (`> [!NOTE]`, `> [!WARNING]`, ...)
+- Tables: aligned by display width, with left / center / right alignment; cells wrap when the table is too wide
+- Horizontal rules, links, images, HTML blocks (shown as is)
+
+### Wrapping rules
+
+- Text wraps to the terminal width; CJK and other full-width characters count as two columns;
+- English words are never split (unless a single word is longer than the whole line);
+- Basic CJK line-breaking rules (kinsoku): punctuation like `，。！？）」` never starts a line, and `（「《` never ends one;
+- Line breaks between CJK characters in the source don't turn into stray spaces.
+
+## Development
 
 ```sh
-INSTA_UPDATE=always cargo test    # 或安装 cargo-insta 后运行 cargo insta review
+cargo build            # build
+cargo test             # unit + snapshot tests
+cargo clippy           # lints
 ```
 
-然后用 `git diff tests/snapshots` 检查变化是否符合预期。
+Parsing, layout and terminal output are independent of each other. Layout produces "lines of styled text"
+without escape sequences, which keeps it easy to test.
 
-### CI 与发布
+| File | Purpose |
+|------|---------|
+| `src/parse.rs` | Parses Markdown into a block tree with pulldown-cmark |
+| `src/wrap.rs` | Wraps by display width (wide characters, kinsoku, soft breaks) |
+| `src/render.rs` | Layout: headings, list indentation, quotes, code blocks, table column widths, ... |
+| `src/highlight.rs` | Syntax highlighting for code blocks |
+| `src/theme.rs` | Colors and styles per element (basic and rich looks) |
+| `src/term.rs` | Detects Ghostty and other terminals, queries background color and cell pixel size |
+| `src/graphics.rs` | Loads and scales images, emits kitty graphics protocol sequences |
+| `src/output.rs` | Emits ANSI styles, OSC 8 hyperlinks and image escapes |
+| `src/main.rs` | CLI options, color and terminal capability detection, terminal width, pager |
 
-- 每次推送到 `main` 和每个 PR，GitHub Actions 都会在 Linux 和 macOS 上跑格式检查、shellcheck、clippy、测试和发布构建（`.github/workflows/ci.yml`）。
-- 发布新版本：改 `Cargo.toml` 里的 `version`，提交后打同名标签并推送：
+Snapshot tests live in `tests/snapshots.rs`, with snapshots in `tests/snapshots/`. After changing the layout,
+update the snapshots with:
+
+```sh
+INSTA_UPDATE=always cargo test    # or install cargo-insta and run cargo insta review
+```
+
+then check the changes with `git diff tests/snapshots`.
+
+### CI and releases
+
+- On every push to `main` and every PR, GitHub Actions runs format checks, shellcheck, clippy, tests and a
+  release build on Linux and macOS (`.github/workflows/ci.yml`).
+- To release a new version, bump `version` in `Cargo.toml`, commit, then tag and push:
 
   ```sh
   git tag v0.2.0 && git push origin main v0.2.0
   ```
 
-  `.github/workflows/release.yml` 会先跑测试，再构建 macOS（arm64 / x86_64）和 Linux（x86_64 / aarch64，musl 静态链接）二进制，然后发布 GitHub Release。
-- Homebrew formula 在 [adevjoe/homebrew-tap](https://github.com/adevjoe/homebrew-tap) 里，由 `scripts/homebrew-formula.sh` 根据 release 生成。
-  如果在本仓库的 Actions secrets 里设置了 `HOMEBREW_TAP_TOKEN`（能写 tap 仓库的令牌），发布时会自动更新 formula；
-  没设置时，手动运行：
+  `.github/workflows/release.yml` runs the tests, builds binaries for macOS (arm64 / x86_64) and Linux
+  (x86_64 / aarch64, statically linked with musl), and publishes a GitHub Release.
+- The Homebrew formula lives in [adevjoe/homebrew-tap](https://github.com/adevjoe/homebrew-tap) and is generated
+  from a release by `scripts/homebrew-formula.sh`. If the `HOMEBREW_TAP_TOKEN` Actions secret (a token with write
+  access to the tap) is set in this repository, the formula is updated automatically on release; otherwise run:
 
   ```sh
   scripts/homebrew-formula.sh v0.2.0 > "$(brew --repository adevjoe/tap)/Formula/mdr.rb"
   ```
 
-## 尚未支持
+## Not yet supported
 
-- 脚注、定义列表、数学公式的专门排版（目前按普通文本或行内代码显示）
-- 自定义配色主题；基础样式下代码高亮固定使用 `base16-ocean.dark`，在浅色背景的终端里个别颜色可能偏淡
-  （增强样式会按终端背景自动选主题）
-- 网络图片、SVG，以及在 iTerm2 等不支持 kitty 图形协议的终端里显示图片
+- Dedicated layout for footnotes, definition lists and math (currently shown as plain text or inline code)
+- Custom color themes; in the basic style code highlighting always uses `base16-ocean.dark`, so a few colors
+  may look faint on light terminal backgrounds (the rich style picks a theme based on the terminal background)
+- Remote images, SVG, and inline images in terminals without the kitty graphics protocol (such as iTerm2)
 
-## 许可证
+## License
 
 [MIT](LICENSE)

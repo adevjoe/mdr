@@ -17,51 +17,51 @@ enum When {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
 enum StyleMode {
-    /// 在 Ghostty、kitty、WezTerm 里用 rich，其他终端用 basic
+    /// Use rich in Ghostty, kitty and WezTerm, basic elsewhere
     Auto,
-    /// 代码块底色面板、行内代码底色、点线链接等增强效果
+    /// Enhanced effects: shaded code block panels, inline code background, dotted link underlines
     Rich,
-    /// 只用文字颜色和边框线，适用于所有终端
+    /// Text colors and box lines only; works in any terminal
     Basic,
 }
 
-/// 在终端里渲染 Markdown。
+/// Render Markdown in the terminal.
 #[derive(Parser, Debug)]
 #[command(
     name = "mdr",
     version,
     about,
-    after_help = "示例:\n  mdr README.md\n  cat notes.md | mdr\n  mdr --width 60 --no-pager doc.md"
+    after_help = "Examples:\n  mdr README.md\n  cat notes.md | mdr\n  mdr --width 60 --no-pager doc.md"
 )]
 struct Cli {
-    /// 要渲染的 Markdown 文件；省略或为 "-" 时从标准输入读取
+    /// Markdown file to render; reads stdin if omitted or "-"
     file: Option<PathBuf>,
 
-    /// 排版宽度（列数），默认取终端宽度
+    /// Layout width in columns (default: terminal width)
     #[arg(short, long, value_parser = clap::value_parser!(u16).range(10..))]
     width: Option<u16>,
 
-    /// 不输出颜色和样式（等同于 --color never）
+    /// Disable colors and styles (same as --color never)
     #[arg(long)]
     no_color: bool,
 
-    /// 何时输出颜色。auto：输出到终端且未设置 NO_COLOR 时
+    /// When to use colors. auto: when writing to a terminal and NO_COLOR is unset
     #[arg(long, value_enum, default_value_t = When::Auto, value_name = "WHEN")]
     color: When,
 
-    /// 何时把链接做成可点击的终端超链接（OSC 8）
+    /// When to make links clickable terminal hyperlinks (OSC 8)
     #[arg(long, value_enum, default_value_t = When::Auto, value_name = "WHEN")]
     hyperlinks: When,
 
-    /// 显示风格。auto：在 Ghostty、kitty、WezTerm 里自动使用增强效果
+    /// Display style. auto: enhanced effects in Ghostty, kitty and WezTerm
     #[arg(long, value_enum, default_value_t = StyleMode::Auto, value_name = "STYLE")]
     style: StyleMode,
 
-    /// 何时在终端里直接显示本地图片（kitty 图形协议，Ghostty 和 kitty 支持）
+    /// When to show local images inline (kitty graphics protocol; supported by Ghostty and kitty)
     #[arg(long, value_enum, default_value_t = When::Auto, value_name = "WHEN")]
     images: When,
 
-    /// 内容超过一屏时也不使用分页器
+    /// Don't use a pager even if output exceeds one screen
     #[arg(long)]
     no_pager: bool,
 }
@@ -118,11 +118,11 @@ fn run(cli: &Cli) -> Result<(), String> {
         width,
         color,
         hyperlinks,
-        // 这几种现代终端都支持真彩色，但通过 ssh 登录时 COLORTERM 不会传过去。
+        // These modern terminals all support truecolor, but COLORTERM isn't passed through over ssh.
         truecolor: color && (truecolor_supported() || kind.rich()),
         rich: rich.then(|| Rich {
             styled_underline: true,
-            // 输出被管道接走时不查询：下游的分页器可能会抢走终端的回复。
+            // Don't query when output is piped: a downstream pager may steal the terminal's reply.
             background: if stdout_tty { term::background() } else { None },
         }),
         images: images.then(|| image_options(cli, window)),
@@ -136,8 +136,8 @@ fn run(cli: &Cli) -> Result<(), String> {
     if let Some(rows) = screen_rows
         && lines.len() >= rows
     {
-        // 分页器显示不了图片。去掉图片后仍然超过一屏才分页；否则是图片把内容撑长了，
-        // 直接带图输出。
+        // Pagers can't show images. Only page if the output still exceeds one screen without
+        // images; otherwise the images made it long, so print directly with images.
         let paged = if opts.images.is_some() {
             opts.images = None;
             Some(render(&source, &opts)).filter(|l| l.len() >= rows)
@@ -159,42 +159,43 @@ fn run(cli: &Cli) -> Result<(), String> {
     let mut out = io::stdout().lock();
     match out.write_all(text.as_bytes()).and_then(|()| out.flush()) {
         Ok(()) => Ok(()),
-        // 例如 `mdr x.md | head`：下游提前关闭不算错误。
+        // e.g. `mdr x.md | head`: the reader closing early isn't an error.
         Err(e) if e.kind() == io::ErrorKind::BrokenPipe => Ok(()),
-        Err(e) => Err(format!("写入输出失败: {e}")),
+        Err(e) => Err(format!("failed to write output: {e}")),
     }
 }
 
 fn read_input(cli: &Cli) -> Result<String, String> {
     let bytes = match &cli.file {
         Some(path) if path.as_os_str() != "-" => {
-            fs::read(path).map_err(|e| format!("无法读取 {}: {e}", path.display()))?
+            fs::read(path).map_err(|e| format!("cannot read {}: {e}", path.display()))?
         }
         _ => {
             let mut stdin = io::stdin();
             if stdin.is_terminal() {
                 return Err(
-                    "没有输入。用法: mdr <文件.md>，或 cat 文件.md | mdr（详见 mdr --help）".into(),
+                    "no input. Usage: mdr <file.md>, or cat file.md | mdr (see mdr --help)".into(),
                 );
             }
             let mut buf = Vec::new();
             stdin
                 .read_to_end(&mut buf)
-                .map_err(|e| format!("读取标准输入失败: {e}"))?;
+                .map_err(|e| format!("failed to read stdin: {e}"))?;
             buf
         }
     };
     Ok(String::from_utf8_lossy(&bytes).into_owned())
 }
 
-/// 图片显示参数：相对路径以 Markdown 文件所在目录为准；一张图最多占窗口高度的三分之二。
+/// Image display options: relative paths resolve against the Markdown file's directory; an image
+/// takes at most two thirds of the window height.
 fn image_options(cli: &Cli, window: Option<term::WindowSize>) -> ImageOptions {
     let base_dir = match &cli.file {
         Some(p) if p.as_os_str() != "-" => p.parent().unwrap_or(Path::new(".")).to_path_buf(),
         _ => PathBuf::from("."),
     };
     let w = window.unwrap_or_default();
-    // 终端不报告像素尺寸时，按常见的 1:2 格子估算。
+    // If the terminal doesn't report pixel sizes, assume a typical 1:2 cell.
     let cell = if w.cell_width > 0 && w.cell_height > 0 {
         (w.cell_width, w.cell_height)
     } else {
@@ -216,9 +217,9 @@ fn env_set(name: &str) -> bool {
     env::var_os(name).is_some_and(|v| !v.is_empty())
 }
 
-/// 排版宽度：终端宽度 → $COLUMNS → 80。
+/// Layout width: terminal width → $COLUMNS → 80.
 ///
-/// 输出被管道接走时（如 `mdr x.md | less -R`）stdout 不是终端，再试试 stderr。
+/// When output is piped (e.g. `mdr x.md | less -R`) stdout isn't a terminal, so try stderr too.
 fn terminal_width(stdout_tty: bool) -> usize {
     let size = if stdout_tty {
         terminal_size::terminal_size()
@@ -239,7 +240,8 @@ fn truecolor_supported() -> bool {
     env::var("COLORTERM").is_ok_and(|v| v == "truecolor" || v == "24bit")
 }
 
-/// 根据环境变量猜测终端是否支持 OSC 8 超链接。没有标准的探测方法，只认已知支持的终端。
+/// Guess from environment variables whether the terminal supports OSC 8 hyperlinks. There is no
+/// standard detection method, so only known terminals are accepted.
 fn terminal_supports_hyperlinks() -> bool {
     let var = |k: &str| env::var(k).unwrap_or_default();
     if matches!(
@@ -276,7 +278,8 @@ fn terminal_supports_hyperlinks() -> bool {
     var("VTE_VERSION").parse::<u32>().is_ok_and(|v| v >= 5000)
 }
 
-/// 交给分页器显示。默认 `less -R`，可用 `MDR_PAGER` 覆盖。启动失败返回 false。
+/// Show output in a pager: `less -R` by default, overridable with `MDR_PAGER`. Returns false if it
+/// fails to start.
 fn page(text: &str) -> bool {
     let pager = env::var("MDR_PAGER")
         .ok()
@@ -294,7 +297,7 @@ fn page(text: &str) -> bool {
         return false;
     };
     if let Some(mut stdin) = child.stdin.take() {
-        // 用户在分页器里提前退出会导致 BrokenPipe，忽略即可。
+        // Quitting the pager early causes BrokenPipe; ignore it.
         let _ = stdin.write_all(text.as_bytes());
     }
     let _ = child.wait();

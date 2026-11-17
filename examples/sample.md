@@ -1,86 +1,87 @@
-# mdr 示例文档
+# mdr sample document
 
-这份文档覆盖了 mdr 支持的所有 Markdown 元素，可以用 `mdr examples/sample.md` 查看效果。
-中文段落在源文件里换行时，渲染结果不会多出空格；中英文混排（例如 Rust、Markdown 和 CommonMark）也能按终端宽度正确折行，标点符号不会跑到行首。
+This document covers every Markdown element mdr supports. Run `mdr examples/sample.md` to see it rendered.
+Long paragraphs wrap to the terminal width without ever splitting a word, and
+line breaks inside a paragraph in the source become ordinary spaces.
 
-## 行内样式
+## Inline styles
 
-普通文字、**粗体**、*斜体*、***粗斜体***、~~删除线~~，以及行内代码 `cargo build --release`。
-样式可以嵌套：**粗体里有 *斜体* 和 `代码`**，也可以 ~~删除 **加粗的** 内容~~。
+Plain text, **bold**, *italic*, ***bold italic***, ~~strikethrough~~, and inline code `cargo build --release`.
+Styles can be nested: **bold with *italic* and `code`**, or ~~deleted **bold** text~~.
 
-这一行末尾有两个空格，表示强制换行；  
-所以这句话会从新的一行开始。
+This line ends with two spaces, which forces a line break;  
+so this sentence starts on a new line.
 
-## 标题层级
+## Headings
 
-### 三级标题
+### Heading level 3
 
-#### 四级标题
+#### Heading level 4
 
-##### 五级标题
+##### Heading level 5
 
-###### 六级标题
+###### Heading level 6
 
-## 链接与图片
+## Links and images
 
-- 普通链接：[Rust 官网](https://www.rust-lang.org/)
-- 自动链接：<https://github.com/pulldown-cmark/pulldown-cmark>
-- 邮件链接：<mailto:hello@example.com>
-- 图片：![mdr 的终端截图](https://example.com/images/mdr-screenshot.png)
+- Link: [The Rust website](https://www.rust-lang.org/)
+- Autolink: <https://github.com/pulldown-cmark/pulldown-cmark>
+- Email link: <mailto:hello@example.com>
+- Image: ![a screenshot of mdr](https://example.com/images/mdr-screenshot.png)
 
-单独成段的本地图片在 Ghostty 和 kitty 里会直接显示出来：
+A local image in a paragraph of its own is displayed inline in Ghostty and kitty:
 
-![一张渐变示意图](demo.png)
+![a gradient demo image](demo.png)
 
-## 列表
+## Lists
 
-无序列表与嵌套：
+Unordered and nested:
 
-- 水果
-  - 苹果
-  - 香蕉
-    - 小米蕉
-    - 皇帝蕉
-- 蔬菜
-- 这是一个特别长的列表项，用来演示列表内容超过一行时，续行会和第一行的文字对齐，而不是顶到最左边。
+- Fruit
+  - Apple
+  - Banana
+    - Lady Finger
+    - Cavendish
+- Vegetables
+- A deliberately long list item, to show that when an item runs past one line, the continuation lines align with the text of the first line instead of the left edge.
 
-有序列表：
+Ordered:
 
-1. 安装 Rust 工具链
-2. 克隆仓库并进入目录
-3. 运行构建命令
-   1. 调试版：`cargo build`
-   2. 发布版：`cargo build --release`
-4. 运行测试
+1. Install the Rust toolchain
+2. Clone the repository and `cd` into it
+3. Build it
+   1. Debug: `cargo build`
+   2. Release: `cargo build --release`
+4. Run the tests
 
-任务列表：
+Task list:
 
-- [x] 解析 Markdown
-- [x] 宽字符换行
-- [ ] 支持脚注
-- [ ] 支持主题配置
+- [x] Parse Markdown
+- [x] Wrap wide characters
+- [ ] Footnotes
+- [ ] Configurable themes
 
-## 引用块
+## Block quotes
 
-> 引用块里的文字会带有左侧竖线。引用可以包含多个段落，长文字同样按宽度自动换行。
+> Text in a block quote gets a bar on its left. A quote can hold several paragraphs, and long lines wrap to the width just like everywhere else.
 >
-> > 引用也可以嵌套，嵌套后每层都有自己的竖线。
+> > Quotes can be nested, and every level gets its own bar.
 >
-> - 引用里也能放列表
-> - 以及 **样式**
+> - Quotes can contain lists
+> - and **styles**
 
 > [!NOTE]
-> 这是 GitHub 风格的提示块。
+> This is a GitHub-style alert.
 
 > [!WARNING]
-> 注意：不要在没有备份的情况下删除数据。
+> Careful: never delete data without a backup.
 
-## 代码块
+## Code blocks
 
 ```rust
 use std::collections::HashMap;
 
-/// 统计每个词出现的次数
+/// Count how many times each word appears.
 fn word_count(text: &str) -> HashMap<&str, usize> {
     let mut map = HashMap::new();
     for word in text.split_whitespace() {
@@ -92,8 +93,8 @@ fn word_count(text: &str) -> HashMap<&str, usize> {
 
 ```python
 def greet(name: str) -> str:
-    # 中文注释也没问题
-    return f"你好，{name}！"
+    # Non-ASCII works too
+    return f"Hello, {name}! 你好！"
 ```
 
 ```bash
@@ -102,35 +103,47 @@ cat README.md | mdr --width 60
 ```
 
 ```
-没有指定语言的代码块不做高亮，原样显示。
+A code block without a language is shown as is, without highlighting.
 ```
 
-## 表格
+## Tables
 
-| 元素 | 语法 | 是否支持 | 备注 |
-|:-----|:----:|:--------:|-----:|
-| 标题 | `#` | ✓ | 六级 |
-| 粗体 | `**text**` | ✓ | — |
-| 表格 | GFM | ✓ | 列宽自动计算 |
-| 脚注 | `[^1]` | ✗ | 计划中 |
-| Mixed 中英 | text | ✓ | 1234 |
+| Element | Syntax | Supported | Notes |
+|:--------|:------:|:---------:|------:|
+| Heading | `#` | ✓ | 6 levels |
+| Bold | `**text**` | ✓ | — |
+| Table | GFM | ✓ | auto widths |
+| Footnote | `[^1]` | ✗ | planned |
+| Mixed 中文 | text | ✓ | 1234 |
 
-单元格内容过长时会在格子里自动换行：
+Cells that are too long wrap inside the cell:
 
-| 命令 | 说明 |
+| Command | Description |
+|---------|-------------|
+| `mdr file.md` | Render a Markdown file; output longer than one screen is handed to the less pager |
+| `cat x.md \| mdr` | Read from standard input |
+| `mdr --no-color` | Turn off colors, handy for copying plain text |
+
+## Wide characters
+
+CJK characters take two columns each, and wrapping and tables account for that.
+中文、日本語、한국어 mixed with English wrap correctly at any width, and punctuation such as 「，。」 never starts a line.
+A line break between CJK characters in the source doesn't turn into a stray space: 这一句在源文件里
+被拆成了两行，渲染后仍然是连续的。
+
+| 语言 | 示例 |
 |------|------|
-| `mdr 文件.md` | 渲染指定的 Markdown 文件，内容超过一屏时自动交给分页器 less 显示 |
-| `cat x.md \| mdr` | 从标准输入读取 |
-| `mdr --no-color` | 关闭颜色，适合复制纯文本 |
+| 中文 | 终端里的 Markdown 渲染器 |
+| 日本語 | ターミナルで Markdown を表示 |
 
-## 分隔线
+## Horizontal rule
 
-上面是一段内容。
+Some content above.
 
 ---
 
-下面是另一段内容。
+Some content below.
 
 <details>
-<summary>HTML 块会原样显示</summary>
+<summary>HTML blocks are shown as is</summary>
 </details>

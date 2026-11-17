@@ -56,6 +56,7 @@ jobs:
           ./target/release/mdr --no-color --width 60 examples/sample.md > out-file.txt
           ./target/release/mdr --no-color --width 60 < examples/sample.md > out-stdin.txt
           cmp out-file.txt out-stdin.txt
-          grep -q "mdr 示例文档" out-file.txt
-          grep -q "│ 元素" out-file.txt
-          if grep -q $'\x1b' out-file.txt; then echo "管道输出里不应有转义序列" >&2; exit 1; fi
+          grep -q "mdr sample document" out-file.txt
+          grep -q "│ Element" out-file.txt
+          ./target/release/mdr --no-color --width 60 examples/sample.zh-CN.md | grep -q "mdr 示例文档"
+          if grep -q $'\x1b' out-file.txt; then echo "piped output must not contain escape sequences" >&2; exit 1; fi

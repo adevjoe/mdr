@@ -1,25 +1,27 @@
-//! 把排好的行转成终端字节流：ANSI 样式、OSC 8 超链接和 kitty 图形协议都在这里生成。
+//! Turn laid-out lines into terminal output: ANSI styles, OSC 8 hyperlinks and kitty graphics
+//! escapes are all generated here.
 
 use std::fmt::Write as _;
 
 use crate::graphics;
 use crate::render::Line;
 
-/// 同步输出（DEC 模式 2026）：终端收到结束标记后再一次性刷新，避免大段输出闪烁。
+/// Synchronized output (DEC mode 2026): the terminal repaints once on the end marker, avoiding
+/// flicker on large output.
 pub const SYNC_BEGIN: &str = "\x1b[?2026h";
 pub const SYNC_END: &str = "\x1b[?2026l";
 
-/// 去掉控制字符，避免文档内容里的转义序列被终端执行。
+/// Strip control characters so escape sequences in the document aren't executed by the terminal.
 fn sanitize(s: &str) -> impl Iterator<Item = char> + '_ {
     s.chars().filter(|c| !c.is_control())
 }
 
-/// 转成字符串。`color` 为 false 时输出纯文本（样式和超链接都被丢弃）。
+/// Convert to a string. When `color` is false, output plain text (styles and hyperlinks are dropped).
 pub fn to_ansi(lines: &[Line], color: bool) -> String {
     let mut out = String::new();
     for line in lines {
-        // 图片会向下占好几行。先用换行把这些行腾出来（在屏幕底部时会滚屏），再把光标移回来，
-        // 这样图片不会画到屏幕外面。
+        // An image spans several rows. Emit newlines first to make room (scrolling if at the
+        // bottom of the screen), then move the cursor back, so the image isn't drawn off-screen.
         let rows = line
             .spans
             .iter()
