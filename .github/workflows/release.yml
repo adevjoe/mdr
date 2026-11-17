@@ -1,6 +1,6 @@
 name: Release
 
-# 推送 v* 标签时：测试 → 构建 macOS / Linux 二进制 → 发布 GitHub Release →（可选）更新 Homebrew tap。
+# On v* tags: test -> build macOS / Linux binaries -> publish a GitHub Release -> (optionally) update the Homebrew tap.
 on:
   push:
     tags: ["v*"]
@@ -19,7 +19,7 @@ jobs:
         include:
           - { target: aarch64-apple-darwin, os: macos-latest }
           - { target: x86_64-apple-darwin, os: macos-latest }
-          # Linux 用 musl 静态链接，不依赖发行版的 glibc 版本
+          # Linux builds link musl statically, so they don't depend on the distro's glibc version
           - { target: x86_64-unknown-linux-musl, os: ubuntu-latest }
           - { target: aarch64-unknown-linux-musl, os: ubuntu-24.04-arm }
     runs-on: ${{ matrix.os }}
@@ -40,7 +40,7 @@ jobs:
         run: |
           version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
           if [ "v$version" != "$GITHUB_REF_NAME" ]; then
-            echo "标签 $GITHUB_REF_NAME 与 Cargo.toml 中的版本 v$version 不一致" >&2
+            echo "tag $GITHUB_REF_NAME does not match version v$version in Cargo.toml" >&2
             exit 1
           fi
 
@@ -60,9 +60,9 @@ jobs:
         run: |
           bin="target/${{ matrix.target }}/release/mdr"
           "$bin" --version
-          "$bin" --no-color --width 60 examples/sample.md | grep -q "mdr 示例文档"
+          "$bin" --no-color --width 60 examples/sample.md | grep -q "mdr sample document"
           if [ "$RUNNER_OS" = Linux ] && ldd "$bin" 2>&1 | grep -q '=>'; then
-            echo "Linux 二进制应该是静态链接的" >&2; ldd "$bin"; exit 1
+            echo "the Linux binary should be statically linked" >&2; ldd "$bin"; exit 1
           fi
 
       - name: Package
@@ -96,7 +96,7 @@ jobs:
             checksums.txt
 
   homebrew:
-    # 需要在仓库里设置 HOMEBREW_TAP_TOKEN（能写 adevjoe/homebrew-tap 的令牌），否则跳过。
+    # Requires the HOMEBREW_TAP_TOKEN secret (a token with write access to adevjoe/homebrew-tap); skipped otherwise.
     needs: release
     runs-on: ubuntu-latest
     env:
@@ -104,7 +104,7 @@ jobs:
     steps:
       - name: Skip without token
         if: env.HAS_TAP_TOKEN != 'true'
-        run: echo "::notice::未设置 HOMEBREW_TAP_TOKEN，跳过 Homebrew tap 更新"
+        run: echo "::notice::HOMEBREW_TAP_TOKEN is not set, skipping the Homebrew tap update"
 
       - uses: actions/checkout@v7
         if: env.HAS_TAP_TOKEN == 'true'
@@ -126,7 +126,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add Formula/mdr.rb
           if git diff --cached --quiet; then
-            echo "formula 没有变化"
+            echo "formula unchanged"
           else
             git commit -m "mdr ${GITHUB_REF_NAME#v}"
             git push

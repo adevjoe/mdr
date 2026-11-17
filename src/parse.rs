@@ -1,20 +1,21 @@
-//! 用 pulldown-cmark 把 Markdown 解析成一棵简单的块级树。
+//! Parse Markdown into a simple block tree using pulldown-cmark.
 //!
-//! pulldown-cmark 输出的是事件流，直接边读边排版会让嵌套容器（列表套引用套代码块）
-//! 很难处理宽度。先建树，再由 [`crate::render`] 递归排版，每一层只需关心自己的缩进。
+//! pulldown-cmark emits an event stream; laying out while reading makes widths hard to
+//! handle for nested containers (a code block in a quote in a list). Building a tree first lets
+//! [`crate::render`] lay out recursively, with each level only concerned with its own indent.
 
 use pulldown_cmark::{
     Alignment, BlockQuoteKind, CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd,
 };
 
-/// 行内样式标记。渲染时由主题决定具体颜色。
+/// Inline style kind. The theme decides the actual colors at render time.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct InlineStyle {
     pub bold: bool,
     pub italic: bool,
     pub strike: bool,
     pub code: bool,
-    /// 图片：文本是 alt，`link` 是图片地址。
+    /// Image: the text is the alt text and `link` is the image URL.
     pub image: bool,
     pub link: Option<String>,
 }
@@ -42,7 +43,7 @@ pub enum Align {
     Right,
 }
 
-/// GitHub 风格的提示块（`> [!NOTE]` 等）。
+/// GitHub-style alert (`> [!NOTE]` etc.).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AlertKind {
     Note,
@@ -54,7 +55,7 @@ pub enum AlertKind {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct ListItem {
-    /// `Some(true)` 已完成，`Some(false)` 未完成，`None` 不是任务项。
+    /// `Some(true)` checked, `Some(false)` unchecked, `None` not a task item.
     pub task: Option<bool>,
     pub blocks: Vec<Block>,
 }
@@ -71,9 +72,9 @@ pub enum Block {
         code: String,
     },
     List {
-        /// 有序列表的起始编号；无序列表为 `None`。
+        /// Start number of an ordered list; `None` for unordered lists.
         start: Option<u64>,
-        /// 紧凑列表（项之间没有空行）。
+        /// Tight list (no blank lines between items).
         tight: bool,
         items: Vec<ListItem>,
     },
@@ -90,7 +91,7 @@ pub enum Block {
     Html(String),
 }
 
-/// 解析 Markdown 文本。
+/// Parse Markdown text.
 pub fn parse(src: &str) -> Vec<Block> {
     let opts = Options::ENABLE_TABLES
         | Options::ENABLE_STRIKETHROUGH
@@ -117,7 +118,7 @@ enum Frame {
     Item {
         task: Option<bool>,
         blocks: Vec<Block>,
-        /// 紧凑列表项里没有 Paragraph 事件，行内内容先攒在这里。
+        /// Tight list items have no Paragraph events, so inline content accumulates here.
         inline: Inlines,
     },
     Paragraph(Inlines),
@@ -142,7 +143,7 @@ struct Builder {
     italic: u32,
     strike: u32,
     links: Vec<String>,
-    /// 正在读取的图片：(地址, alt 文本)。
+    /// Image being read: (URL, alt text).
     image: Option<(String, String)>,
 }
 
@@ -271,7 +272,7 @@ impl Builder {
     fn start(&mut self, tag: Tag) {
         match tag {
             Tag::Paragraph => {
-                // 列表项里出现 Paragraph 说明是松散列表。
+                // A Paragraph inside a list item means the list is loose.
                 let n = self.stack.len();
                 if n >= 2
                     && matches!(self.stack[n - 1], Frame::Item { .. })

@@ -1,12 +1,12 @@
-//! mdr：在终端里渲染 Markdown。
+//! mdr: render Markdown in the terminal.
 //!
-//! 处理流程分三步，彼此独立、可以单独测试：
+//! The pipeline has three independent, separately testable stages:
 //!
-//! 1. [`parse`]：pulldown-cmark 事件流 → 块级树；
-//! 2. [`render`]：块级树 → 按宽度排好的带样式文字行（换行逻辑在 [`wrap`]）；
-//! 3. [`output`]：文字行 → 带 ANSI / OSC 8 / kitty 图形转义的字符串。
+//! 1. [`parse`]: pulldown-cmark event stream → block tree;
+//! 2. [`render`]: block tree → styled text lines laid out to a width (wrapping lives in [`wrap`]);
+//! 3. [`output`]: text lines → a string with ANSI / OSC 8 / kitty graphics escapes.
 //!
-//! [`term`] 识别 Ghostty 等现代终端，启用更丰富的样式（[`theme::Rich`]）和图片显示（[`graphics`]）。
+//! [`term`] detects modern terminals such as Ghostty and enables richer styling ([`theme::Rich`]) and inline images ([`graphics`]).
 
 pub mod graphics;
 pub mod highlight;

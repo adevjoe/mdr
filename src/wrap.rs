@@ -1,55 +1,58 @@
-//! 按「显示宽度」换行。
+//! Line wrapping by display width.
 //!
-//! 中文、日文等全角字符在终端里占 2 列，`unicode-width` 负责算宽度；
-//! 这里负责决定在哪里断行：
+//! Full-width characters (Chinese, Japanese, etc.) occupy 2 columns in a terminal. `unicode-width`
+//! computes widths; this module decides where lines may break:
 //!
-//! - 拉丁文按空格断词，单词本身不拆开（除非比整行还宽）；
-//! - 全角字符之间任意位置都可以断行；
-//! - 简单的避头尾：`，。）」` 这类标点不放在行首，`（「《` 这类不放在行尾；
-//! - 源文件里中文之间的软换行不产生多余空格。
+//! - Latin text breaks at spaces; words are never split (unless wider than the whole line);
+//! - a break is allowed between any two full-width characters;
+//! - simple kinsoku shori (CJK line-breaking rules): closing punctuation such as `，。）」` never
+//!   starts a line, and opening punctuation such as `（「《` never ends a line;
+//! - soft line breaks between CJK characters in the source do not produce extra spaces.
 //!
-//! 换行器对样式类型 `S` 是泛型的，所以不依赖终端输出，方便单元测试。
+//! The wrapper is generic over the style type `S`, so it does not depend on terminal output and is
+//! easy to unit test.
 
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
-/// 字符串在终端中占用的列数。
+/// Number of terminal columns a string occupies.
 pub fn display_width(s: &str) -> usize {
     UnicodeWidthStr::width(s)
 }
 
-/// 一段带样式的文本。
+/// A run of styled text.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Piece<S> {
     pub text: String,
     pub style: S,
 }
 
-/// 换行器的输入。
+/// Input to the wrapper.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Item<S> {
     Text(String, S),
-    /// Markdown 的软换行：通常相当于一个空格，中文之间则什么也不是。
+    /// A Markdown soft break: usually equivalent to a space, but nothing at all between CJK
+    /// characters.
     SoftBreak,
-    /// 强制换行。
+    /// A hard line break.
     HardBreak,
 }
 
-/// 换行后的一行。
+/// A single wrapped line.
 pub type WrappedLine<S> = Vec<Piece<S>>;
 
-/// 一行的显示宽度。
+/// Display width of a line.
 pub fn line_width<S>(line: &[Piece<S>]) -> usize {
     line.iter().map(|p| display_width(&p.text)).sum()
 }
 
-/// 不能出现在行首的标点。
+/// Punctuation that must not start a line (kinsoku: no-line-start).
 const CLOSING: &[&str] = &[
     "，", "。", "、", "；", "：", "？", "！", "）", "」", "』", "》", "〉", "】", "〕", "］", "｝",
     "”", "’", "…", "～", ",", ".", ";", ":", "!", "?", ")", "]", "}", "%",
 ];
 
-/// 不能出现在行尾的标点。
+/// Punctuation that must not end a line (kinsoku: no-line-end).
 const OPENING: &[&str] = &[
     "（", "「", "『", "《", "〈", "【", "〔", "［", "｛", "“", "‘", "(", "[", "{",
 ];
@@ -63,7 +66,7 @@ fn is_opening(g: &str) -> bool {
 }
 
 fn is_space(g: &str) -> bool {
-    // 不换行空格（NBSP）不作为断点。
+    // A non-breaking space (NBSP) is not a break opportunity.
     g != "\u{a0}" && g.chars().all(char::is_whitespace)
 }
 
@@ -78,10 +81,10 @@ fn append<S: Clone + PartialEq>(pieces: &mut Vec<Piece<S>>, text: &str, style: &
 }
 
 enum Tok<S> {
-    /// 不可再分的一段（拉丁单词、单个汉字连同粘着的标点……）及其宽度。
-    /// 相邻的两个 Word 之间可以断行。
+    /// An unbreakable segment (a Latin word, a single CJK character with its attached
+    /// punctuation, ...) and its width. A break is allowed between two adjacent Words.
     Word(Vec<Piece<S>>, usize),
-    /// 空格：可以断行，断行时丢弃。
+    /// A space: a break opportunity, dropped when the line breaks there.
     Space(S),
     Hard,
 }
@@ -90,9 +93,9 @@ struct Tokenizer<S> {
     toks: Vec<Tok<S>>,
     cur: Vec<Piece<S>>,
     cur_w: usize,
-    /// 刚遇到一个开括号类标点，下一个字符要粘在一起。
+    /// Just saw opening punctuation; the next character must stick to it.
     glue: bool,
-    /// 尚未决定是否变成空格的软换行。
+    /// A soft break not yet resolved into a space or nothing.
     soft: Option<S>,
     last_wide: bool,
     last_style: Option<S>,
@@ -142,7 +145,7 @@ impl<S: Clone + PartialEq> Tokenizer<S> {
         let w = display_width(g);
         let wide = w >= 2;
 
-        // 软换行：两边都是全角字符时直接相连，否则当成空格。
+        // Soft break: join directly if both sides are full-width, otherwise treat as a space.
         if let Some(soft_style) = self.soft.take()
             && !(self.last_wide && (wide || is_closing(g)))
         {
@@ -222,10 +225,10 @@ fn tokenize<S: Clone + PartialEq>(items: &[Item<S>]) -> Vec<Tok<S>> {
     t.finish()
 }
 
-/// 把带样式的行内内容按 `width` 列换行。
+/// Wraps styled inline content to `width` columns.
 ///
-/// 返回的每一行宽度都不超过 `width`（`width` 至少按 2 算，保证能放下一个全角字符）。
-/// 内容为空时返回空列表。
+/// Every returned line is at most `width` wide (`width` is treated as at least 2 so a full-width
+/// character always fits). Returns an empty list for empty content.
 pub fn wrap<S: Clone + PartialEq>(items: &[Item<S>], width: usize) -> Vec<WrappedLine<S>> {
     let width = width.max(2);
     let mut lines = Vec::new();
@@ -262,7 +265,7 @@ pub fn wrap<S: Clone + PartialEq>(items: &[Item<S>], width: usize) -> Vec<Wrappe
                     }
                     w += ww;
                 } else {
-                    // 单个「词」比整行还宽：按字形簇硬拆。
+                    // A single "word" is wider than the line: hard-split it by grapheme cluster.
                     for p in &pieces {
                         for g in p.text.graphemes(true) {
                             let gw = display_width(g);
@@ -284,7 +287,8 @@ pub fn wrap<S: Clone + PartialEq>(items: &[Item<S>], width: usize) -> Vec<Wrappe
     lines
 }
 
-/// 最长的不可断开片段（英文单词等）的宽度，即不硬拆单词时能缩到的最小宽度。
+/// Width of the longest unbreakable segment (e.g. an English word), i.e. the minimum width
+/// achievable without hard-splitting words.
 pub fn min_width<S: Clone + PartialEq>(items: &[Item<S>]) -> usize {
     tokenize(items)
         .iter()
@@ -296,12 +300,14 @@ pub fn min_width<S: Clone + PartialEq>(items: &[Item<S>]) -> usize {
         .unwrap_or(0)
 }
 
-/// 不考虑单词边界，严格按宽度切分（用于代码块）。至少返回一行。
+/// Splits strictly by width, ignoring word boundaries (used for code blocks). Always returns at
+/// least one line.
 pub fn hard_wrap<S: Clone + PartialEq>(pieces: &[Piece<S>], width: usize) -> Vec<WrappedLine<S>> {
     hard_wrap_hanging(pieces, width, width)
 }
 
-/// 同 [`hard_wrap`]，但第一行宽 `first`、后续行宽 `rest`（给续行的缩进和标记留出位置）。
+/// Like [`hard_wrap`], but the first line is `first` wide and subsequent lines are `rest` wide
+/// (leaving room for continuation-line indentation and markers).
 pub fn hard_wrap_hanging<S: Clone + PartialEq>(
     pieces: &[Piece<S>],
     first: usize,
@@ -376,7 +382,7 @@ mod tests {
     fn mixed_cjk_and_latin() {
         let lines = wrap_str("Rust 是一门注重安全和性能的系统编程语言", 12);
         for l in &lines {
-            assert!(display_width(l) <= 12, "{l:?} 超宽");
+            assert!(display_width(l) <= 12, "{l:?} too wide");
         }
         assert_eq!(
             lines.concat().replace(' ', ""),
@@ -387,7 +393,8 @@ mod tests {
 
     #[test]
     fn closing_punctuation_never_starts_a_line() {
-        // 宽度 6 时「三」后的「，」本来会落到行首，应当和「三」一起换行。
+        // At width 6 the "，" after "三" would start a line; it must move to the next line together
+        // with "三".
         let lines = wrap_str("一二三，四五六。七八九", 6);
         assert_eq!(lines, vec!["一二", "三，四", "五六。", "七八九"]);
         for l in &lines {
@@ -397,7 +404,7 @@ mod tests {
 
     #[test]
     fn opening_punctuation_never_ends_a_line() {
-        // 不处理的话会得到「一二（」+「三四」。
+        // Without this rule we would get "一二（" + "三四".
         let lines = wrap_str("一二（三四", 6);
         assert_eq!(lines, vec!["一二", "（三四"]);
     }
@@ -445,7 +452,7 @@ mod tests {
                 for l in wrap_str(s, width) {
                     assert!(
                         display_width(&l) <= width,
-                        "width={width} line={l:?} 宽度 {}",
+                        "width={width} line={l:?} width {}",
                         display_width(&l)
                     );
                 }

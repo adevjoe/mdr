@@ -1,4 +1,4 @@
-//! 代码块语法高亮（syntect）。
+//! Syntax highlighting for code blocks (syntect).
 
 use std::sync::LazyLock;
 
@@ -16,14 +16,14 @@ static THEMES: LazyLock<(Theme, Theme)> = LazyLock::new(|| {
     (dark, light)
 });
 
-/// 深色高亮主题自带的颜色。
+/// Colors built into the dark highlighting theme.
 pub struct ThemeColors {
     pub bg: (u8, u8, u8),
     pub fg: (u8, u8, u8),
     pub comment: (u8, u8, u8),
 }
 
-/// 深色高亮主题（base16-ocean.dark）的背景、前景和注释颜色。
+/// Background, foreground and comment colors of the dark theme (base16-ocean.dark).
 pub fn dark_colors() -> ThemeColors {
     let s = &THEMES.0.settings;
     let c =
@@ -38,7 +38,7 @@ pub fn dark_colors() -> ThemeColors {
 fn find_syntax(lang: &str) -> Option<&'static SyntaxReference> {
     let ss = &*SYNTAXES;
     let lower = lang.to_ascii_lowercase();
-    // syntect 自带的语法里没有这些名字，映射到相近的语法。
+    // syntect's bundled syntaxes lack these names; map them to similar syntaxes.
     let alias = match lower.as_str() {
         "ts" | "typescript" | "tsx" | "jsx" | "mjs" | "cjs" => "js",
         "shell" | "zsh" | "console" | "shellsession" => "bash",
@@ -58,15 +58,17 @@ fn find_syntax(lang: &str) -> Option<&'static SyntaxReference> {
         })
 }
 
-/// 是否认识这门语言。
+/// Whether the language is recognized.
 pub fn supports(lang: &str) -> bool {
     find_syntax(lang).is_some()
 }
 
-/// 高亮代码，返回每行的 (样式, 文本) 片段；不认识的语言返回 `None`。
+/// Highlights code, returning (style, text) segments for each line; returns `None` for unknown
+/// languages.
 ///
-/// 与主题默认前景色相同的文字不着色，这样在浅色终端里也能看清。
-/// `light` 为 true 时使用浅色主题（InspiredGitHub）。
+/// Text matching the theme's default foreground is left uncolored so it stays readable on light
+/// terminals.
+/// When `light` is true, the light theme (InspiredGitHub) is used.
 pub fn highlight(
     code: &str,
     lang: &str,
@@ -109,7 +111,7 @@ pub fn highlight(
     Some(out)
 }
 
-/// 24 位颜色；终端不支持真彩色时换成最接近的 256 色。
+/// A 24-bit color; falls back to the nearest 256-color value when the terminal lacks truecolor.
 pub fn rgb(r: u8, g: u8, b: u8, truecolor: bool) -> Color {
     if truecolor {
         Color::Rgb(RgbColor(r, g, b))
@@ -118,7 +120,7 @@ pub fn rgb(r: u8, g: u8, b: u8, truecolor: bool) -> Color {
     }
 }
 
-/// 把 24 位颜色映射到 xterm 256 色。
+/// Maps a 24-bit color to the xterm 256-color palette.
 pub fn rgb_to_ansi256(r: u8, g: u8, b: u8) -> u8 {
     if r == g && g == b {
         return match r {

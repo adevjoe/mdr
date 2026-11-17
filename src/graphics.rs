@@ -1,25 +1,26 @@
-//! 在终端里直接显示图片（kitty 图形协议，Ghostty 和 kitty 支持）。
+//! Inline image display in the terminal (kitty graphics protocol, supported by Ghostty and kitty).
 //!
-//! 只读取本地图片文件；网络图片不下载，仍按文字显示。图片先按终端格子的像素尺寸缩小，
-//! 再转成 PNG 发给终端，避免传输原始大图。
+//! Only local image files are read; remote images are not downloaded and are still shown as text.
+//! Images are first downscaled to fit the terminal's cell pixel size, then encoded as PNG and sent
+//! to the terminal, so large originals are never transmitted.
 
 use std::path::{Path, PathBuf};
 
 use base64::Engine as _;
 use image::GenericImageView as _;
 
-/// 显示图片所需的环境信息。
+/// Environment information needed to display images.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ImageOptions {
-    /// 相对路径的基准目录（Markdown 文件所在目录）。
+    /// Base directory for relative paths (the directory containing the Markdown file).
     pub base_dir: PathBuf,
-    /// 每个格子的像素尺寸 (宽, 高)。
+    /// Pixel size of a single cell (width, height).
     pub cell: (u16, u16),
-    /// 一张图片最多占多少行。
+    /// Maximum number of rows a single image may occupy.
     pub max_rows: usize,
 }
 
-/// 准备好发给终端的图片。
+/// An image ready to be sent to the terminal.
 #[derive(Debug, PartialEq)]
 pub struct Graphic {
     pub png: Vec<u8>,
@@ -27,7 +28,7 @@ pub struct Graphic {
     pub rows: usize,
 }
 
-/// 把图片地址解析成本地路径。网络地址和 data URI 返回 `None`。
+/// Resolves an image URL to a local path. Returns `None` for remote URLs and data URIs.
 pub fn resolve(src: &str, base: &Path) -> Option<PathBuf> {
     let src = src.trim();
     let path = if let Some(p) = src.strip_prefix("file://") {
@@ -37,7 +38,7 @@ pub fn resolve(src: &str, base: &Path) -> Option<PathBuf> {
     } else {
         src
     };
-    // 去掉 `?query` 和 `#fragment`，并解开 %20 之类的编码。
+    // Strip `?query` and `#fragment`, and percent-decode sequences like %20.
     let path = path.split(['?', '#']).next().unwrap_or(path);
     let path = PathBuf::from(percent_decode(path));
     Some(if path.is_absolute() {
@@ -67,8 +68,8 @@ fn percent_decode(s: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
-/// 按格子尺寸算出图片占多少列、多少行：不放大到超过原始尺寸，宽度不超过
-/// `max_cols`，高度不超过 `max_rows`。
+/// Computes how many columns and rows an image occupies given the cell size: never upscaled
+/// beyond its original size, at most `max_cols` wide and at most `max_rows` tall.
 pub fn fit(
     (px_w, px_h): (u32, u32),
     (cell_w, cell_h): (u16, u16),
@@ -89,7 +90,7 @@ pub fn fit(
     (cols, rows)
 }
 
-/// 读取并缩放图片。读不了或格式不支持时返回 `None`。
+/// Loads and scales an image. Returns `None` if it cannot be read or the format is unsupported.
 pub fn load(src: &str, opts: &ImageOptions, max_cols: usize) -> Option<Graphic> {
     let path = resolve(src, &opts.base_dir)?;
     let img = image::ImageReader::open(path)
@@ -112,8 +113,9 @@ pub fn load(src: &str, opts: &ImageOptions, max_cols: usize) -> Option<Graphic> 
     Some(Graphic { png, cols, rows })
 }
 
-/// 生成 kitty 图形协议的转义序列：在光标处显示图片，缩放到 cols×rows 个格子，
-/// 显示后光标不动（`C=1`），由调用方负责换行。
+/// Builds the kitty graphics protocol escape sequence: displays the image at the cursor, scaled
+/// to cols×rows cells, leaving the cursor in place (`C=1`); the caller is responsible for line
+/// breaks.
 pub fn kitty_sequence(g: &Graphic) -> String {
     let data = base64::engine::general_purpose::STANDARD.encode(&g.png);
     let chunks: Vec<&str> = data
@@ -163,13 +165,13 @@ mod tests {
 
     #[test]
     fn fits_images_into_cells() {
-        // 800×400 的图，格子 10×20：自然宽度 80 列，高 20 行。
+        // An 800×400 image with 10×20 cells: natural size is 80 columns by 20 rows.
         assert_eq!(fit((800, 400), (10, 20), 100, 50), (80, 20));
-        // 宽度受限时等比缩小。
+        // Scaled down proportionally when width-constrained.
         assert_eq!(fit((800, 400), (10, 20), 40, 50), (40, 10));
-        // 高度受限时同样等比缩小。
+        // Likewise scaled down proportionally when height-constrained.
         assert_eq!(fit((800, 400), (10, 20), 100, 10), (40, 10));
-        // 小图不放大。
+        // Small images are not upscaled.
         assert_eq!(fit((16, 16), (10, 20), 100, 50), (2, 1));
     }
 

@@ -1,10 +1,12 @@
-//! 对示例文档做快照测试。更新快照：`INSTA_UPDATE=always cargo test`
-//! （或安装 cargo-insta 后运行 `cargo insta review`）。
+//! Snapshot tests for the example documents. To update snapshots: `INSTA_UPDATE=always cargo test`
+//! (or install cargo-insta and run `cargo insta review`).
 
 use mdr::{RenderOptions, render, to_plain};
 use unicode_width::UnicodeWidthStr;
 
 const SAMPLE: &str = include_str!("../examples/sample.md");
+/// The Chinese sample exercises full-width wrapping, kinsoku and CJK tables throughout.
+const SAMPLE_ZH: &str = include_str!("../examples/sample.zh-CN.md");
 
 #[test]
 fn sample_at_80_columns() {
@@ -17,16 +19,29 @@ fn sample_at_40_columns() {
 }
 
 #[test]
-/// 4 列表格每格至少要放下一个全角字符，最少需要 21 列，所以从 24 开始测。
-fn sample_never_exceeds_width() {
-    for width in [24, 33, 40, 57, 80, 120] {
-        for line in render(SAMPLE, &RenderOptions::plain(width)) {
-            let text = line.plain();
-            assert!(
-                text.width() <= width,
-                "width={width}: {text:?} 宽 {}",
-                text.width()
-            );
+fn sample_zh_at_80_columns() {
+    insta::assert_snapshot!(to_plain(&render(SAMPLE_ZH, &RenderOptions::plain(80))));
+}
+
+#[test]
+fn sample_zh_at_40_columns() {
+    insta::assert_snapshot!(to_plain(&render(SAMPLE_ZH, &RenderOptions::plain(40))));
+}
+
+#[test]
+/// A 4-column table needs at least 21 columns so every cell fits one full-width character, so
+/// testing starts at 24.
+fn samples_never_exceed_width() {
+    for sample in [SAMPLE, SAMPLE_ZH] {
+        for width in [24, 33, 40, 57, 80, 120] {
+            for line in render(sample, &RenderOptions::plain(width)) {
+                let text = line.plain();
+                assert!(
+                    text.width() <= width,
+                    "width={width}: {text:?} width {}",
+                    text.width()
+                );
+            }
         }
     }
 }

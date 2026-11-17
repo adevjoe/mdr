@@ -1,8 +1,9 @@
-//! 识别终端类型和能力：Ghostty 等现代终端支持更丰富的显示效果。
+//! Detect the terminal type and capabilities: modern terminals like Ghostty support richer display.
 //!
-//! 没有标准的探测方法，主要靠环境变量判断；终端背景色通过 OSC 11 查询。
+//! There is no standard detection method, so this relies mostly on environment variables; the
+//! background color is queried with OSC 11.
 
-/// 已知的现代终端。
+/// Known modern terminals.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
     Ghostty,
@@ -12,21 +13,22 @@ pub enum Kind {
 }
 
 impl Kind {
-    /// 是否适合使用增强样式（代码面板、样式化下划线等）。
+    /// Whether enhanced styling (code panels, styled underlines, etc.) is appropriate.
     pub fn rich(self) -> bool {
         self != Kind::Other
     }
 
-    /// 是否支持 kitty 图形协议（在终端里直接显示图片）。
+    /// Whether the kitty graphics protocol (inline images) is supported.
     pub fn graphics(self) -> bool {
         matches!(self, Kind::Ghostty | Kind::Kitty)
     }
 }
 
-/// 根据环境变量识别终端。`var` 返回变量值，未设置时返回空字符串。
+/// Detect the terminal from environment variables. `var` returns a variable's value, or an empty
+/// string if unset.
 ///
-/// 在 tmux / screen 里时，外层终端的变量会被继承下来，但这些复用器会拦截或改写
-/// 大部分转义序列，所以一律按普通终端处理。
+/// Inside tmux / screen the outer terminal's variables are inherited, but these multiplexers
+/// intercept or rewrite most escape sequences, so they are always treated as plain terminals.
 pub fn detect(var: impl Fn(&str) -> String) -> Kind {
     if !var("TMUX").is_empty() || !var("STY").is_empty() {
         return Kind::Other;
@@ -49,12 +51,12 @@ pub fn detect(var: impl Fn(&str) -> String) -> Kind {
     }
 }
 
-/// 从环境变量识别当前终端。
+/// Detect the current terminal from environment variables.
 pub fn detect_env() -> Kind {
     detect(|k| std::env::var(k).unwrap_or_default())
 }
 
-/// 解析 OSC 11 回复（`ESC ] 11 ; rgb:RRRR/GGGG/BBBB` + BEL 或 ST），返回 8 位 RGB。
+/// Parse an OSC 11 reply (`ESC ] 11 ; rgb:RRRR/GGGG/BBBB` + BEL or ST) into 8-bit RGB.
 pub fn parse_osc11(reply: &[u8]) -> Option<(u8, u8, u8)> {
     let s = String::from_utf8_lossy(reply);
     let start = s.find("]11;")? + 4;
@@ -73,12 +75,12 @@ pub fn parse_osc11(reply: &[u8]) -> Option<(u8, u8, u8)> {
     parts.next().is_none().then_some(rgb)
 }
 
-/// 颜色是否偏亮（感知亮度过半）。
+/// Whether a color is light (perceived luminance above half).
 pub fn is_light((r, g, b): (u8, u8, u8)) -> bool {
     0.2126 * f64::from(r) + 0.7152 * f64::from(g) + 0.0722 * f64::from(b) > 128.0
 }
 
-/// 终端窗口的大小：(列, 行, 每格宽度像素, 每格高度像素)。像素取不到时为 0。
+/// Terminal window size: (columns, rows, cell width px, cell height px). Pixels are 0 when unavailable.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct WindowSize {
     pub cols: u16,
@@ -102,7 +104,7 @@ mod sys {
 
     pub fn window_size() -> Option<WindowSize> {
         let tty = tty()?;
-        // SAFETY: winsize 是纯数据结构，ioctl 只往里面写数据。
+        // SAFETY: winsize is plain data; ioctl only writes into it.
         let mut ws: libc::winsize = unsafe { std::mem::zeroed() };
         if unsafe { libc::ioctl(tty.as_raw_fd(), libc::TIOCGWINSZ, &mut ws) } != 0 || ws.ws_col == 0
         {
@@ -117,17 +119,18 @@ mod sys {
         })
     }
 
-    /// 向终端发 OSC 11 查询背景色，再发 DA1 作为结束标记：所有终端都会回复 DA1，
-    /// 所以收到 DA1 的回复还没有背景色，就说明终端不支持，不用干等到超时。
+    /// Send an OSC 11 background color query followed by DA1 as a sentinel: every terminal
+    /// answers DA1, so getting the DA1 reply without a color means the terminal doesn't support
+    /// the query, and we don't have to wait for the timeout.
     pub fn background() -> Option<(u8, u8, u8)> {
         let mut tty = tty()?;
         let fd = tty.as_raw_fd();
-        // SAFETY: termios 是纯数据结构，由 tcgetattr 填充。
+        // SAFETY: termios is plain data, filled in by tcgetattr.
         let mut orig: libc::termios = unsafe { std::mem::zeroed() };
         if unsafe { libc::tcgetattr(fd, &mut orig) } != 0 {
             return None;
         }
-        // 用 VTIME 做读超时（每次最多等 0.1 秒）。macOS 上的 poll() 不支持终端设备。
+        // Use VTIME as the read timeout (at most 0.1 s per read). poll() on macOS doesn't support tty devices.
         let mut raw = orig;
         raw.c_lflag &= !(libc::ICANON | libc::ECHO);
         raw.c_cc[libc::VMIN] = 0;
@@ -152,7 +155,7 @@ mod sys {
         super::parse_osc11(&reply)
     }
 
-    /// 是否已收到 DA1 回复（`ESC [ ? … c`）。
+    /// Whether the DA1 reply (`ESC [ ? … c`) has been received.
     fn da1_done(reply: &[u8]) -> bool {
         let Some(pos) = reply.windows(3).position(|w| w == b"\x1b[?") else {
             return false;
@@ -161,7 +164,7 @@ mod sys {
     }
 }
 
-/// 读取终端窗口大小（含每格像素尺寸）。
+/// Read the terminal window size (including cell pixel size).
 pub fn window_size() -> Option<WindowSize> {
     #[cfg(unix)]
     {
@@ -173,7 +176,8 @@ pub fn window_size() -> Option<WindowSize> {
     }
 }
 
-/// 查询终端背景色。终端不回复或不在终端里运行时返回 `None`。
+/// Query the terminal background color. Returns `None` if the terminal doesn't reply or we're not
+/// running in a terminal.
 pub fn background() -> Option<(u8, u8, u8)> {
     #[cfg(unix)]
     {
@@ -205,13 +209,13 @@ mod tests {
     #[test]
     fn detects_terminals() {
         assert_eq!(detect(env(&[("TERM_PROGRAM", "ghostty")])), Kind::Ghostty);
-        // 通过 ssh 登录时只有 TERM 会传过去。
+        // Over ssh only TERM is passed through.
         assert_eq!(detect(env(&[("TERM", "xterm-ghostty")])), Kind::Ghostty);
         assert_eq!(detect(env(&[("TERM", "xterm-kitty")])), Kind::Kitty);
         assert_eq!(detect(env(&[("TERM_PROGRAM", "WezTerm")])), Kind::WezTerm);
         assert_eq!(detect(env(&[("TERM_PROGRAM", "iTerm.app")])), Kind::Other);
         assert_eq!(detect(env(&[])), Kind::Other);
-        // tmux 里继承了 Ghostty 的变量，也不当作 Ghostty。
+        // Inside tmux, inherited Ghostty variables don't count as Ghostty.
         assert_eq!(
             detect(env(&[
                 ("TMUX", "/tmp/tmux-501/default,1,0"),
