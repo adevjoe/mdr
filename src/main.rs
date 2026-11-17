@@ -4,9 +4,12 @@ use std::io::{self, IsTerminal, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode, Stdio};
 
-use clap::{Parser, ValueEnum};
+use clap::error::ErrorKind;
+use clap::{CommandFactory, FromArgMatches, Parser, ValueEnum};
 
 use mdr::{ImageOptions, RenderOptions, Rich, output, render, term};
+
+mod help;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
 enum When {
@@ -67,7 +70,7 @@ struct Cli {
 }
 
 fn main() -> ExitCode {
-    let cli = Cli::parse();
+    let cli = parse_args();
     match run(&cli) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
@@ -75,6 +78,24 @@ fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+/// Parse the command line. `--help` is shown in the system language; the language is only looked
+/// up when help is requested, so normal runs don't pay for it.
+fn parse_args() -> Cli {
+    let args: Vec<_> = env::args_os().collect();
+    let matches = match Cli::command().try_get_matches_from(&args) {
+        Ok(m) => m,
+        Err(e) if e.kind() == ErrorKind::DisplayHelp => {
+            let cmd = help::localize(Cli::command(), help::Lang::detect());
+            match cmd.try_get_matches_from(&args) {
+                Ok(m) => m,
+                Err(e) => e.exit(),
+            }
+        }
+        Err(e) => e.exit(),
+    };
+    Cli::from_arg_matches(&matches).unwrap_or_else(|e| e.exit())
 }
 
 fn run(cli: &Cli) -> Result<(), String> {
@@ -302,4 +323,55 @@ fn page(text: &str) -> bool {
     }
     let _ = child.wait();
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn chinese_help_is_fully_translated() {
+        let mut english = Cli::command();
+        english.build();
+        let mut cmd = help::localize(Cli::command(), help::Lang::Zh);
+        cmd.build();
+        for arg in cmd.get_arguments() {
+            let en = english
+                .get_arguments()
+                .find(|a| a.get_id() == arg.get_id())
+                .unwrap();
+            assert_ne!(
+                arg.get_help().map(ToString::to_string),
+                en.get_help().map(ToString::to_string),
+                "--{} has no Chinese help",
+                arg.get_id()
+            );
+        }
+        for help in [cmd.render_help(), cmd.render_long_help()] {
+            let help = help.to_string();
+            for english in [
+                "Usage:",
+                "Arguments:",
+                "Options:",
+                "Examples:",
+                "default:",
+                "ossible values",
+                "Print ",
+            ] {
+                assert!(
+                    !help.contains(english),
+                    "untranslated {english:?} in:\n{help}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn english_help_is_unchanged() {
+        let help = help::localize(Cli::command(), help::Lang::En)
+            .render_help()
+            .to_string();
+        assert!(help.contains("Usage: mdr [OPTIONS] [FILE]"));
+        assert!(help.contains("[default: auto]"));
+    }
 }

@@ -102,7 +102,7 @@ mdr examples/sample.md          # 英文示例
 | `--style <auto\|rich\|basic>` | 显示风格。`auto` 在 Ghostty、kitty、WezTerm 里用增强效果，其他终端用基础效果 |
 | `--images <auto\|always\|never>` | 何时在终端里直接显示本地图片，默认 `auto`（Ghostty、kitty） |
 | `--no-pager` | 不使用分页器 |
-| `-h, --help` / `-V, --version` | 帮助 / 版本 |
+| `-h, --help` / `-V, --version` | 帮助 / 版本。帮助按系统语言显示（英文或简体中文）：依据 `LC_ALL` / `LC_MESSAGES` / `LANG` / `LANGUAGE`，都没设置时读取 macOS 的语言设置 |
 
 ### 颜色
 

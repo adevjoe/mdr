@@ -105,7 +105,7 @@ mdr examples/sample.zh-CN.md    # Chinese sample
 | `--style <auto\|rich\|basic>` | Display style. `auto` uses the rich style in Ghostty, kitty and WezTerm, basic elsewhere |
 | `--images <auto\|always\|never>` | When to display local images in the terminal. Default `auto` (Ghostty, kitty) |
 | `--no-pager` | Don't use a pager |
-| `-h, --help` / `-V, --version` | Help / version |
+| `-h, --help` / `-V, --version` | Help / version. Help is shown in the system language (English or Simplified Chinese), taken from `LC_ALL` / `LC_MESSAGES` / `LANG` / `LANGUAGE`, or from the macOS language settings when none are set |
 
 ### Colors
 
