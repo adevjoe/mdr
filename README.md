@@ -228,12 +228,14 @@ then check the changes with `git diff tests/snapshots`.
   `.github/workflows/release.yml` runs the tests, builds binaries for macOS (arm64 / x86_64) and Linux
   (x86_64 / aarch64, statically linked with musl), and publishes a GitHub Release.
 - The Homebrew formula lives in [adevjoe/homebrew-tap](https://github.com/adevjoe/homebrew-tap) and is generated
-  from a release by `scripts/homebrew-formula.sh`. If the `HOMEBREW_TAP_TOKEN` Actions secret (a token with write
-  access to the tap) is set in this repository, the formula is updated automatically on release; otherwise run:
+  from a release by `scripts/homebrew-formula.sh`. The release workflow does not touch the tap, so after publishing
+  a release update the formula by hand:
 
   ```sh
   scripts/homebrew-formula.sh v0.2.0 > "$(brew --repository adevjoe/tap)/Formula/mdr.rb"
   ```
+
+  Then commit and push the tap (its `main` branch).
 
 ## Not yet supported
 

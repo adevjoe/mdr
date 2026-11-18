@@ -212,12 +212,13 @@ INSTA_UPDATE=always cargo test    # 或安装 cargo-insta 后运行 cargo insta 
 
   `.github/workflows/release.yml` 会先跑测试，再构建 macOS（arm64 / x86_64）和 Linux（x86_64 / aarch64，musl 静态链接）二进制，然后发布 GitHub Release。
 - Homebrew formula 在 [adevjoe/homebrew-tap](https://github.com/adevjoe/homebrew-tap) 里，由 `scripts/homebrew-formula.sh` 根据 release 生成。
-  如果在本仓库的 Actions secrets 里设置了 `HOMEBREW_TAP_TOKEN`（能写 tap 仓库的令牌），发布时会自动更新 formula；
-  没设置时，手动运行：
+  发布工作流不会动 tap，发完 release 后手动更新 formula：
 
   ```sh
   scripts/homebrew-formula.sh v0.2.0 > "$(brew --repository adevjoe/tap)/Formula/mdr.rb"
   ```
+
+  然后提交并推送 tap 仓库的 `main` 分支。
 
 ## 尚未支持
 
