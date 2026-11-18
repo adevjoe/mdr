@@ -731,18 +731,14 @@ impl Renderer<'_> {
         let mut out = vec![rule(top_l, "┬", top_r)];
         out.extend(render_row(head, header_style));
         out.push(rule("├", "┼", "┤"));
-        let body: Vec<Vec<Line>> = rows
-            .iter()
-            .map(|row| render_row(row, Style::new()))
-            .collect();
-        // If any row wraps, draw separators between all rows; otherwise it's unclear
-        // where a row ends. Tables whose rows are all single-line stay compact.
-        let separate = body.iter().any(|r| r.len() > 1);
-        for (i, row) in body.into_iter().enumerate() {
-            if i > 0 && separate {
+        // Separate every body row: terminal lines have no spacing of their own, so stacked
+        // rows look cramped, and wrapped rows need a boundary anyway. Always drawing them
+        // also keeps a table looking the same whether or not any cell wraps.
+        for (i, row) in rows.iter().enumerate() {
+            if i > 0 {
                 out.push(rule("├", "┼", "┤"));
             }
-            out.extend(row);
+            out.extend(render_row(row, Style::new()));
         }
         out.push(rule(bottom_l, "┴", bottom_r));
         out
@@ -832,19 +828,19 @@ mod tests {
 | 混合 mixed 内容 | 中English文 | 100 |
 ";
         let lines = plain(md, 80);
-        assert_eq!(lines.len(), 7);
+        assert_eq!(lines.len(), 9);
         assert_table_aligned(&lines);
         // Alignment: left / center / right.
         assert_eq!(
             lines[3],
             "│ 苹果            │ 红色的水果  │ 数量 │".replace("数量", "   3")
         );
-        assert!(lines[4].starts_with("│ Banana          │    黄色     │"));
-        assert!(lines[5].ends_with("│  100 │"));
+        assert!(lines[5].starts_with("│ Banana          │    黄色     │"));
+        assert!(lines[7].ends_with("│  100 │"));
     }
 
     #[test]
-    fn wrapped_table_rows_get_separators() {
+    fn table_rows_get_separators() {
         let md = "\
 | 项目 | 描述 |
 |------|------|
@@ -869,9 +865,23 @@ mod tests {
                 "└──────┴───────────────┘",
             ]
         );
-        // Tables with only single-line rows get no separators.
+        // Single-line rows are separated too, so rows don't look cramped.
         let lines = plain(md, 80);
-        assert_eq!(lines.iter().filter(|l| l.starts_with('├')).count(), 1);
+        assert_table_aligned(&lines);
+        assert_eq!(
+            lines,
+            vec![
+                "┌──────┬──────────────────────────┐",
+                "│ 项目 │ 描述                     │",
+                "├──────┼──────────────────────────┤",
+                "│ 生成 │ 这一格的内容较长需要换行 │",
+                "├──────┼──────────────────────────┤",
+                "│ 判定 │ 短                       │",
+                "├──────┼──────────────────────────┤",
+                "│ 统计 │ 也短                     │",
+                "└──────┴──────────────────────────┘",
+            ]
+        );
     }
 
     #[test]
